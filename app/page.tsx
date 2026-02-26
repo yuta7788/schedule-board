@@ -1,65 +1,351 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useMemo, useRef, useCallback } from "react";
+import { addDays, format, startOfDay } from "date-fns";
+import { enUS } from "date-fns/locale";
+import { useAuth } from "@/hooks/useAuth";
+import { useEvents, type DisplayEvent } from "@/hooks/useEvents";
+import { useLocations } from "@/hooks/useLocations";
+import { LoginModal } from "@/components/LoginModal";
+import { EventDetailsModal } from "@/components/EventDetailsModal";
+import { EventFormModal } from "@/components/EventFormModal";
+import { Fab } from "@/components/Fab";
+
+const GRID_START_HOUR = 9;
+const GRID_END_HOUR = 19;
+const TOTAL_MINUTES = (GRID_END_HOUR - GRID_START_HOUR) * 60;
+const GRID_HEIGHT_PX = 600;
+const MINUTES_PER_PX = TOTAL_MINUTES / GRID_HEIGHT_PX;
+const HOUR_ROW_HEIGHT_PX = GRID_HEIGHT_PX / (GRID_END_HOUR - GRID_START_HOUR);
+const MAX_DAYS_AHEAD = 14;
+
+function timeToMinutesFromStart(timeStr: string): number {
+  const [h, m] = timeStr.split(":").map(Number);
+  const startMinutes = GRID_START_HOUR * 60;
+  return (h * 60 + m) - startMinutes;
+}
+
+function parseTimeToMinutes(timeStr: string): number {
+  const [h, m] = timeStr.split(":").map(Number);
+  return h * 60 + (m ?? 0);
+}
+
+/** Format hour for display: 9→"9:00", 13→"1:00", 19→"7:00" (no AM/PM) */
+function formatHourLabel(hour: number): string {
+  const h = hour > 12 ? hour - 12 : hour;
+  return `${h}:00`;
+}
+
+function EventBlock({
+  event,
+  onClick,
+}: {
+  event: DisplayEvent;
+  onClick: () => void;
+}) {
+  const topMinutes = timeToMinutesFromStart(event.startTime);
+  const startM = parseTimeToMinutes(event.startTime);
+  const endM = parseTimeToMinutes(event.endTime);
+  const durationMinutes = Math.max(1, endM - startM);
+
+  const topPx = topMinutes / MINUTES_PER_PX;
+  const heightPx = durationMinutes / MINUTES_PER_PX;
+  const rawColor = event.locations?.color ?? event.locationColor ?? "";
+  const isLightBg =
+    rawColor === "bg-blue-200" ||
+    rawColor === "bg-green-200" ||
+    rawColor === "bg-red-200" ||
+    rawColor === "bg-yellow-200" ||
+    rawColor === "bg-purple-200" ||
+    rawColor === "bg-pink-200" ||
+    rawColor === "bg-gray-200";
+  const bgClass =
+    rawColor === "bg-emerald-500/90"
+      ? "bg-emerald-500/90"
+      : rawColor === "bg-blue-500/90"
+        ? "bg-blue-500/90"
+        : rawColor === "bg-amber-500/90"
+          ? "bg-amber-500/90"
+          : rawColor === "bg-violet-500/90"
+            ? "bg-violet-500/90"
+            : rawColor === "bg-blue-200"
+              ? "bg-blue-200"
+              : rawColor === "bg-green-200"
+                ? "bg-green-200"
+                : rawColor === "bg-red-200"
+                  ? "bg-red-200"
+                  : rawColor === "bg-yellow-200"
+                    ? "bg-yellow-200"
+                    : rawColor === "bg-purple-200"
+                      ? "bg-purple-200"
+                      : rawColor === "bg-pink-200"
+                        ? "bg-pink-200"
+                        : rawColor === "bg-gray-200"
+                          ? "bg-gray-200"
+                          : "bg-slate-500/90";
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <button
+      type="button"
+      onClick={onClick}
+      className={`absolute left-0.5 right-0.5 rounded shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-1 ${bgClass} ${isLightBg ? "text-slate-900" : "text-white"}`}
+      style={{
+        top: `${topPx}px`,
+        height: `${heightPx}px`,
+        minHeight: "28px",
+      }}
+    >
+      <div className="flex h-full flex-col items-center justify-center overflow-hidden px-0.5 py-0.5 text-center text-xs sm:text-[13px]">
+        <span className="shrink-0 font-mono">
+          {event.startTime}-{event.endTime}
+        </span>
+        <span className="shrink-0 font-bold">
+          {event.student_name ?? event.studentInitials}
+        </span>
+        <span className="truncate shrink-0 opacity-95">
+          {event.locations?.name ?? event.locationName}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+export default function ScheduleBoardPage() {
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const { isLoggedIn, signIn, signOut } = useAuth();
+  const { events, refetch: refetchEvents } = useEvents(today, MAX_DAYS_AHEAD);
+  const { locations, refetch: refetchLocations } = useLocations();
+
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<DisplayEvent | null>(null);
+  const [eventFormMode, setEventFormMode] = useState<"add" | "edit">("add");
+  const [eventFormOpen, setEventFormOpen] = useState(false);
+  const [currentMonthDate, setCurrentMonthDate] = useState<Date>(() => today);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const timeColumnRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
+
+  const weekDates = useMemo(
+    () => Array.from({ length: MAX_DAYS_AHEAD }, (_, i) => addDays(today, i)),
+    [today]
+  );
+
+  const hours = useMemo(
+    () =>
+      Array.from(
+        { length: GRID_END_HOUR - GRID_START_HOUR },
+        (_, i) => GRID_START_HOUR + i
+      ),
+    []
+  );
+
+  const updateMonthFromScroll = useCallback(() => {
+    const timeEl = timeColumnRef.current;
+    const containerEl = scrollContainerRef.current;
+    if (!timeEl || !containerEl) return;
+
+    const baseline = timeEl.getBoundingClientRect().right;
+    const columns = containerEl.querySelectorAll<HTMLElement>("[data-day-column]");
+
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i];
+      const r = col.getBoundingClientRect();
+      const dateStr = col.getAttribute("data-date");
+      if (!dateStr) continue;
+      const date = new Date(dateStr);
+
+      if (r.left <= baseline && baseline < r.right) {
+        setCurrentMonthDate(date);
+        return;
+      }
+      if (r.left >= baseline) {
+        setCurrentMonthDate(date);
+        return;
+      }
+    }
+    const last = columns[columns.length - 1];
+    if (last) {
+      const dateStr = last.getAttribute("data-date");
+      if (dateStr) setCurrentMonthDate(new Date(dateStr));
+    }
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    if (scrollRafRef.current !== null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      updateMonthFromScroll();
+    });
+  }, [updateMonthFromScroll]);
+
+  const monthLabel = format(currentMonthDate, "MMMM yyyy", { locale: enUS });
+
+  function openAddEvent() {
+    setEventFormMode("add");
+    setSelectedEvent(null);
+    setEventFormOpen(true);
+  }
+
+  function openEditEvent(event: DisplayEvent) {
+    setEventFormMode("edit");
+    setSelectedEvent(event);
+    setEventFormOpen(true);
+  }
+
+  function openEventDetails(event: DisplayEvent) {
+    setSelectedEvent(event);
+  }
+
+  const showDetailsModal = !!selectedEvent && !eventFormOpen;
+
+  return (
+    <div className="min-h-screen max-w-[100vw] overflow-x-hidden bg-slate-50">
+      <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
+        <span className="text-lg font-semibold text-slate-800 sm:text-xl">
+          {monthLabel}
+        </span>
+        <button
+          type="button"
+          onClick={() => (isLoggedIn ? signOut() : setLoginModalOpen(true))}
+          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          {isLoggedIn ? "Logout" : "Login"}
+        </button>
+      </header>
+
+      <div
+        ref={scrollContainerRef}
+        className="w-full overflow-x-auto overflow-y-hidden"
+        style={{ maxWidth: "100vw" }}
+        onScroll={handleScroll}
+      >
+        <div className="flex min-w-max">
+          <div
+            ref={timeColumnRef}
+            className="sticky left-0 z-20 flex shrink-0 flex-col border-r border-slate-200 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
+            style={{ width: "56px" }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+            <div
+              className="border-b border-slate-200 bg-slate-50/90"
+              style={{ height: "52px", minHeight: "52px" }}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <div className="relative bg-white" style={{ height: GRID_HEIGHT_PX }}>
+              {hours.map((hour) => (
+                <div
+                  key={hour}
+                  className="absolute right-0 pr-2 text-xs font-medium text-slate-500 -translate-y-1/2"
+                  style={{
+                    top: (hour - GRID_START_HOUR) * HOUR_ROW_HEIGHT_PX,
+                  }}
+                >
+                  {formatHourLabel(hour)}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 border-l-0">
+            {weekDates.map((d, dayIndex) => (
+              <div
+                key={d.toISOString()}
+                className="flex w-[120px] min-w-[120px] flex-col shrink-0 border-r border-slate-200 bg-white md:w-[150px] md:min-w-[150px]"
+                data-day-column
+                data-date={d.toISOString()}
+              >
+                <div
+                  className="flex flex-col items-center justify-center border-b border-slate-200 bg-slate-50/90 py-1.5 text-center"
+                  style={{ height: "52px", minHeight: "52px" }}
+                >
+                  <span className="text-xs font-medium text-slate-600">
+                    {format(d, "EEE", { locale: enUS })}
+                  </span>
+                  <span className="text-sm font-medium text-slate-800">
+                    {format(d, "d")}
+                  </span>
+                </div>
+                <div
+                  className="relative"
+                  style={{ height: GRID_HEIGHT_PX }}
+                >
+                  {hours.map((hour) => (
+                    <div
+                      key={hour}
+                      className="border-b border-slate-200"
+                      style={{ height: HOUR_ROW_HEIGHT_PX }}
+                    />
+                  ))}
+                  <div className="absolute inset-0">
+                    {events
+                      .filter((e) => e.dayIndex === dayIndex)
+                      .map((event) => (
+                        <EventBlock
+                          key={event.id}
+                          event={event}
+                          onClick={() => openEventDetails(event)}
+                        />
+                      ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
+      </div>
+
+      {isLoggedIn && <Fab onClick={openAddEvent} ariaLabel="Add event" />}
+
+      {loginModalOpen && (
+        <LoginModal
+          onClose={() => setLoginModalOpen(false)}
+          onSuccess={() => setLoginModalOpen(false)}
+          signIn={signIn}
+        />
+      )}
+
+      {showDetailsModal && (
+        <EventDetailsModal
+          event={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+          isLoggedIn={isLoggedIn}
+          onEdit={() => setEventFormOpen(true)}
+        />
+      )}
+
+      {isLoggedIn && eventFormOpen && selectedEvent && (
+        <EventFormModal
+          mode="edit"
+          event={selectedEvent}
+          locations={locations}
+          startDate={today}
+          dayCount={MAX_DAYS_AHEAD}
+          existingEvents={events}
+          onClose={() => {
+            setEventFormOpen(false);
+            setSelectedEvent(null);
+          }}
+          onSuccess={() => {
+            refetchEvents();
+            refetchLocations();
+          }}
+        />
+      )}
+
+      {isLoggedIn && eventFormOpen && !selectedEvent && (
+        <EventFormModal
+          mode="add"
+          event={null}
+          locations={locations}
+          startDate={today}
+          dayCount={MAX_DAYS_AHEAD}
+          existingEvents={events}
+          onClose={() => setEventFormOpen(false)}
+          onSuccess={() => {
+            refetchEvents();
+            refetchLocations();
+          }}
+        />
+      )}
     </div>
   );
 }

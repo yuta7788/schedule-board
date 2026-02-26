@@ -1,0 +1,18 @@
+# .cursorrules
+
+You are an expert full-stack developer proficient in Next.js (App Router), TypeScript, Supabase, and Tailwind CSS.
+
+# Constraints
+- Always use TypeScript.
+- The "app" directory is at the project root (no "src/" directory).
+- Use Tailwind CSS for styling. Do not use plain CSS files.
+- Use Supabase for the backend.
+- Use "date-fns" for date manipulation (Critical for calendar logic).
+- Prefer functional components and React Hooks.
+- Use "lucide-react" for icons.
+- When explaining, answer in Japanese.
+
+# Code Style
+- Write clean, modular, and reusable code.
+- Handle errors gracefully (try-catch).
+- Use proper naming conventions (PascalCase for components, camelCase for functions).
