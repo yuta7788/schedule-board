@@ -12,10 +12,11 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* 常にライトテーマで表示する（モバイルの上下余白も白に揃える） */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #ffffff;
+    --foreground: #171717;
   }
 }
 

@@ -288,8 +288,8 @@ export function EventFormModal({
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
+          <div className="flex gap-4">
+            <div className="flex-1">
               <label htmlFor="event-start" className="block text-sm font-medium text-slate-700">
                 Start Time
               </label>
@@ -301,7 +301,7 @@ export function EventFormModal({
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
-            <div>
+            <div className="flex-1">
               <label htmlFor="event-end" className="block text-sm font-medium text-slate-700">
                 End Time
               </label>
