@@ -23,14 +23,30 @@ export function useStudentNames() {
         throw e;
       }
 
-      const seen = new Set<string>();
-      const list: string[] = [];
-      for (const row of data ?? []) {
-        const name = (row as { student_name: string | null }).student_name?.trim();
-        if (!name || seen.has(name)) continue;
-        seen.add(name);
-        list.push(name);
+      type Row = { student_name: string | null; start_time: string | null };
+      const byName = new Map<
+        string,
+        { displayName: string; lastUsedAt: string }
+      >();
+
+      for (const row of (data ?? []) as Row[]) {
+        const raw = row.student_name?.trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        const ts = row.start_time ?? "";
+        const existing = byName.get(key);
+        if (!existing || ts > existing.lastUsedAt) {
+          byName.set(key, { displayName: raw, lastUsedAt: ts });
+        }
       }
+
+      const list = Array.from(byName.values())
+        .sort((a, b) => {
+          if (a.lastUsedAt === b.lastUsedAt) return 0;
+          return a.lastUsedAt < b.lastUsedAt ? 1 : -1;
+        })
+        .map((v) => v.displayName);
+
       setNames(list);
     } catch (err) {
       console.error("Fetch student names error:", err);

@@ -8,6 +8,7 @@ interface LocationComboboxProps {
   locations: LocationRow[];
   value: string;
   onSelect: (location: LocationRow | null) => void;
+  onInputChange?: (value: string) => void;
   id?: string;
   placeholder?: string;
   "aria-label"?: string;
@@ -17,6 +18,7 @@ export function LocationCombobox({
   locations,
   value,
   onSelect,
+  onInputChange,
   id = "event-location",
   placeholder = "Type or select location",
   "aria-label": ariaLabel = "Location",
@@ -64,6 +66,9 @@ export function LocationCombobox({
     setInputValue(v);
     if (!v.trim()) {
       onSelect(null);
+    }
+    if (onInputChange) {
+      onInputChange(v);
     }
     setIsOpen(true);
   }

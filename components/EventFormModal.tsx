@@ -24,6 +24,9 @@ interface EventFormModalProps {
   mode: "add" | "edit";
   event: DisplayEvent | null;
   locations: LocationRow[];
+  initialDate?: string;
+  initialStartTime?: string;
+  initialEndTime?: string;
   startDate: Date;
   dayCount: number;
   existingEvents: DisplayEvent[];
@@ -35,6 +38,9 @@ export function EventFormModal({
   mode,
   event,
   locations,
+  initialDate,
+  initialStartTime,
+  initialEndTime,
   startDate,
   dayCount,
   existingEvents,
@@ -69,16 +75,16 @@ export function EventFormModal({
           : COLOR_OPTIONS[0]
       );
     } else {
-      setDate(format(startDate, "yyyy-MM-dd"));
-      setStartTime("09:00");
-      setEndTime("10:00");
+      setDate(initialDate ?? format(startDate, "yyyy-MM-dd"));
+      setStartTime(initialStartTime ?? "09:00");
+      setEndTime(initialEndTime ?? "10:00");
       setStudentName("");
       setLocationId("");
       setLocationName("");
       setAddress("");
       setSelectedColor(COLOR_OPTIONS[0]);
     }
-  }, [mode, event, startDate]);
+  }, [mode, event, startDate, initialDate, initialStartTime, initialEndTime]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -282,7 +288,7 @@ export function EventFormModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="event-start" className="block text-sm font-medium text-slate-700">
                 Start Time
@@ -344,6 +350,13 @@ export function EventFormModal({
                     setLocationId("");
                     setLocationName("");
                     setAddress("");
+                  }
+                }}
+                onInputChange={(v) => {
+                  setLocationName(v);
+                  // テキスト入力を始めたら既存ロケーション ID はリセットして新規扱いにする
+                  if (!v.trim()) {
+                    setLocationId("");
                   }
                 }}
                 placeholder="Type or select location"

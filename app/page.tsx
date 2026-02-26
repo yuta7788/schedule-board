@@ -87,7 +87,10 @@ function EventBlock({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       className={`absolute left-0.5 right-0.5 rounded shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-1 ${bgClass} ${isLightBg ? "text-slate-900" : "text-white"}`}
       style={{
         top: `${topPx}px`,
@@ -118,9 +121,13 @@ export default function ScheduleBoardPage() {
 
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<DisplayEvent | null>(null);
-  const [eventFormMode, setEventFormMode] = useState<"add" | "edit">("add");
   const [eventFormOpen, setEventFormOpen] = useState(false);
   const [currentMonthDate, setCurrentMonthDate] = useState<Date>(() => today);
+  const [formInitialDate, setFormInitialDate] = useState(() =>
+    format(today, "yyyy-MM-dd")
+  );
+  const [formInitialStartTime, setFormInitialStartTime] = useState("09:00");
+  const [formInitialEndTime, setFormInitialEndTime] = useState("10:00");
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timeColumnRef = useRef<HTMLDivElement>(null);
@@ -182,14 +189,41 @@ export default function ScheduleBoardPage() {
   const monthLabel = format(currentMonthDate, "MMMM yyyy", { locale: enUS });
 
   function openAddEvent() {
-    setEventFormMode("add");
+    setFormInitialDate(format(today, "yyyy-MM-dd"));
+    setFormInitialStartTime("09:00");
+    setFormInitialEndTime("10:00");
+    setSelectedEvent(null);
+    setEventFormOpen(true);
+  }
+
+  function openAddEventForDate(date: Date, offsetY: number) {
+    if (!isLoggedIn) return;
+    // クリック位置から開始・終了時刻を計算（30分単位、デフォルト1時間枠）
+    const clampedY = Math.max(0, Math.min(GRID_HEIGHT_PX, offsetY));
+    const minutesFromStart = (clampedY / GRID_HEIGHT_PX) * TOTAL_MINUTES;
+    const startTotalMinutes = GRID_START_HOUR * 60 + minutesFromStart;
+    const roundedStart = Math.floor(startTotalMinutes / 30) * 30;
+    const roundedEnd = Math.min(roundedStart + 60, GRID_END_HOUR * 60);
+
+    const startHour = Math.floor(roundedStart / 60);
+    const startMin = roundedStart % 60;
+    const endHour = Math.floor(roundedEnd / 60);
+    const endMin = roundedEnd % 60;
+
+    const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+
+    setFormInitialDate(format(date, "yyyy-MM-dd"));
+    setFormInitialStartTime(`${pad(startHour)}:${pad(startMin)}`);
+    setFormInitialEndTime(`${pad(endHour)}:${pad(endMin)}`);
     setSelectedEvent(null);
     setEventFormOpen(true);
   }
 
   function openEditEvent(event: DisplayEvent) {
-    setEventFormMode("edit");
     setSelectedEvent(event);
+    setFormInitialDate(event.date);
+    setFormInitialStartTime(event.startTime);
+    setFormInitialEndTime(event.endTime);
     setEventFormOpen(true);
   }
 
@@ -267,6 +301,12 @@ export default function ScheduleBoardPage() {
                 <div
                   className="relative"
                   style={{ height: GRID_HEIGHT_PX }}
+                onClick={(e) => {
+                  if (!isLoggedIn) return;
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const offsetY = e.clientY - rect.top;
+                  openAddEventForDate(d, offsetY);
+                }}
                 >
                   {hours.map((hour) => (
                     <div
@@ -317,6 +357,9 @@ export default function ScheduleBoardPage() {
           mode="edit"
           event={selectedEvent}
           locations={locations}
+          initialDate={formInitialDate}
+          initialStartTime={formInitialStartTime}
+          initialEndTime={formInitialEndTime}
           startDate={today}
           dayCount={MAX_DAYS_AHEAD}
           existingEvents={events}
@@ -336,6 +379,9 @@ export default function ScheduleBoardPage() {
           mode="add"
           event={null}
           locations={locations}
+          initialDate={formInitialDate}
+          initialStartTime={formInitialStartTime}
+          initialEndTime={formInitialEndTime}
           startDate={today}
           dayCount={MAX_DAYS_AHEAD}
           existingEvents={events}

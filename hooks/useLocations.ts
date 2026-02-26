@@ -19,7 +19,18 @@ export function useLocations() {
         .order("last_used_at", { ascending: false, nullsFirst: false })
         .order("name");
       if (e) throw e;
-      setLocations((data as LocationRow[]) ?? []);
+      const rows = (data as LocationRow[]) ?? [];
+      // 同じ name のロケーションは一番新しいものだけ残す（last_used_at desc の並びを利用）
+      const seen = new Set<string>();
+      const deduped: LocationRow[] = [];
+      for (const loc of rows) {
+        const key = loc.name.trim().toLowerCase();
+        if (!key) continue;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(loc);
+      }
+      setLocations(deduped);
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
