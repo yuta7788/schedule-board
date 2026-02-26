@@ -3,12 +3,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { format, parseISO } from "date-fns";
 import { supabase } from "@/lib/supabase/client";
-import type { EventWithLocation, LocationJoin } from "@/lib/types/database";
+import type { EventRow, LocationJoin } from "@/lib/types/database";
 
-/** Supabase join can return locations as object or (singular) location as object/array. Normalize to one object. */
-function normalizeLocations(
-  row: EventWithLocation & { location?: LocationJoin | LocationJoin[] | null }
-): LocationJoin | null {
+/** Supabase からの join 結果（locations がオブジェクト or 配列 or null） */
+type EventRowWithJoin = EventRow & {
+  locations?: LocationJoin | LocationJoin[] | null;
+  location?: LocationJoin | LocationJoin[] | null;
+};
+
+/** Supabase join can return locations as object or array. Normalize to one object. */
+function normalizeLocations(row: EventRowWithJoin): LocationJoin | null {
   const loc = row.locations ?? row.location;
   if (loc == null) return null;
   if (Array.isArray(loc)) return loc[0] ?? null;
@@ -38,10 +42,7 @@ export interface DisplayEvent {
   studentInitials: string;
 }
 
-function toDisplayEvent(
-  row: EventWithLocation & { location?: LocationJoin | LocationJoin[] | null },
-  dayIndex: number
-): DisplayEvent {
+function toDisplayEvent(row: EventRowWithJoin, dayIndex: number): DisplayEvent {
   const startDate = parseISO(row.start_time);
   const loc = normalizeLocations(row);
   const startTime = format(startDate, "HH:mm");
@@ -89,9 +90,7 @@ export function useEvents(startDate: Date, dayCount: number) {
         throw e;
       }
 
-      type Row = EventWithLocation & {
-        location?: LocationJoin | LocationJoin[] | null;
-      };
+      type Row = EventRowWithJoin;
       const rows = (data as Row[]) ?? [];
       const startMs = startDate.getTime();
       const endMs =
