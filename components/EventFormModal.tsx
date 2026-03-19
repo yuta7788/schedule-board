@@ -14,10 +14,13 @@ const COLOR_OPTIONS = [
   "bg-blue-200",
   "bg-green-200",
   "bg-red-200",
-  "bg-yellow-200",
+  // 黄色が強すぎるため、グレー味のある青に置き換え
+  "bg-indigo-100",
   "bg-purple-200",
   "bg-pink-200",
   "bg-gray-200",
+  // グレー系の追加枠
+  "bg-slate-200",
 ] as const;
 
 interface EventFormModalProps {
@@ -68,7 +71,12 @@ export function EventFormModal({
       setLocationId(event.locationId);
       setLocationName(event.locationName);
       setAddress(event.address);
-      const eventColor = event.locations?.color ?? event.locationColor ?? "";
+      const rawEventColor = event.locations?.color ?? event.locationColor ?? "";
+      // 旧色（bg-yellow-200 / bg-sky-200）を、新しい選択肢に正規化して表示する
+      const eventColor =
+        rawEventColor === "bg-yellow-200" || rawEventColor === "bg-sky-200"
+          ? "bg-indigo-100"
+          : rawEventColor;
       setSelectedColor(
         COLOR_OPTIONS.includes(eventColor as (typeof COLOR_OPTIONS)[number])
           ? eventColor
@@ -95,6 +103,7 @@ export function EventFormModal({
       setError("Student name is required.");
       return;
     }
+    const isJobStudent = trimmedStudentName.toLowerCase() === "job";
 
     const start = startTime.slice(0, 5);
     const end = endTime.slice(0, 5);
@@ -128,13 +137,18 @@ export function EventFormModal({
 
       if (existing?.id) {
         resolvedLocationId = existing.id;
-        await supabase
-          .from("locations")
-          .update({
+        // student_name が job の予定は、location の色に追従しない（既存 location の color を更新しない）
+        const updatePayload: { last_used_at: string; address: string | null; color?: string } =
+          {
             last_used_at: new Date().toISOString(),
             address: address.trim() || null,
-            color: selectedColor,
-          })
+          };
+        if (!isJobStudent) {
+          updatePayload.color = selectedColor;
+        }
+        await supabase
+          .from("locations")
+          .update(updatePayload)
           .eq("id", resolvedLocationId);
       } else {
         const { data: inserted, error: insertLocErr } = await supabase

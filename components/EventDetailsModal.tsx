@@ -62,7 +62,7 @@ export function EventDetailsModal({ event, onClose, isLoggedIn, onEdit }: EventD
           </div>
         )}
         <div className="mt-6 flex flex-wrap gap-3">
-          {isLoggedIn && onEdit && (
+          {isLoggedIn && onEdit && !event?.isCopied && (
             <button
               type="button"
               onClick={onEdit}

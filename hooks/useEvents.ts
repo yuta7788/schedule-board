@@ -40,6 +40,8 @@ export interface DisplayEvent {
   address: string;
   locationId: string;
   studentInitials: string;
+  /** 表示のみのコピー枠（DBの実データではない） */
+  isCopied?: boolean;
 }
 
 function toDisplayEvent(row: EventRowWithJoin, dayIndex: number): DisplayEvent {

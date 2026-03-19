@@ -30,10 +30,23 @@ function parseTimeToMinutes(timeStr: string): number {
   return h * 60 + (m ?? 0);
 }
 
-/** Format hour for display: 9→"9:00", 13→"1:00", 19→"7:00" (no AM/PM) */
+/** Format hour for display: 8→"8 AM", 13→"1 PM", 19→"7 PM" */
 function formatHourLabel(hour: number): string {
-  const h = hour > 12 ? hour - 12 : hour;
-  return `${h}:00`;
+  const suffix = hour < 12 ? "AM" : "PM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12} ${suffix}`;
+}
+
+function formatTimeWithAmPm(timeStr: string, includeSuffix: boolean = true): string {
+  // expected: "HH:mm" (e.g. "09:30")
+  const [hh, mm] = timeStr.split(":").map(Number);
+  const suffix = hh < 12 ? "AM" : "PM";
+  const hour12 = hh % 12 === 0 ? 12 : hh % 12;
+  const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+
+  const timePart = mm === 0 ? `${hour12}` : `${hour12}:${pad(mm)}`;
+  if (!includeSuffix) return timePart;
+  return `${timePart} ${suffix}`;
 }
 
 function EventBlock({
@@ -43,6 +56,7 @@ function EventBlock({
   event: DisplayEvent;
   onClick: () => void;
 }) {
+  const isJobStudent = event.student_name?.toLowerCase() === "job";
   const topMinutes = timeToMinutesFromStart(event.startTime);
   const startM = parseTimeToMinutes(event.startTime);
   const endM = parseTimeToMinutes(event.endTime);
@@ -50,17 +64,29 @@ function EventBlock({
 
   const topPx = topMinutes / MINUTES_PER_PX;
   const heightPx = durationMinutes / MINUTES_PER_PX;
-  const rawColor = event.locations?.color ?? event.locationColor ?? "";
-  const isLightBg =
-    rawColor === "bg-blue-200" ||
-    rawColor === "bg-green-200" ||
-    rawColor === "bg-red-200" ||
-    rawColor === "bg-yellow-200" ||
-    rawColor === "bg-purple-200" ||
-    rawColor === "bg-pink-200" ||
-    rawColor === "bg-gray-200";
-  const bgClass =
-    rawColor === "bg-emerald-500/90"
+  const locationRawColor = event.locations?.color ?? event.locationColor ?? "";
+  // 既存データの bg-yellow-200（または bg-sky-200）を、見た目を寄せた bg-indigo-100 に正規化
+  const normalizedRawColor =
+    locationRawColor === "bg-yellow-200" || locationRawColor === "bg-sky-200"
+      ? "bg-indigo-100"
+      : locationRawColor;
+
+  const rawColor = isJobStudent ? "" : normalizedRawColor;
+  const isLightBg = isJobStudent
+    ? true
+    : rawColor === "bg-blue-200" ||
+      rawColor === "bg-green-200" ||
+      rawColor === "bg-red-200" ||
+      rawColor === "bg-indigo-100" ||
+      rawColor === "bg-sky-200" ||
+      rawColor === "bg-purple-200" ||
+      rawColor === "bg-pink-200" ||
+      rawColor === "bg-gray-200" ||
+      rawColor === "bg-slate-200";
+
+  const bgClass = isJobStudent
+    ? "bg-slate-500/80"
+    : rawColor === "bg-emerald-500/90"
       ? "bg-emerald-500/90"
       : rawColor === "bg-blue-500/90"
         ? "bg-blue-500/90"
@@ -74,15 +100,19 @@ function EventBlock({
                 ? "bg-green-200"
                 : rawColor === "bg-red-200"
                   ? "bg-red-200"
-                  : rawColor === "bg-yellow-200"
-                    ? "bg-yellow-200"
+                  : rawColor === "bg-indigo-100"
+                    ? "bg-indigo-100"
+                    : rawColor === "bg-sky-200"
+                      ? "bg-sky-200"
                     : rawColor === "bg-purple-200"
                       ? "bg-purple-200"
                       : rawColor === "bg-pink-200"
                         ? "bg-pink-200"
                         : rawColor === "bg-gray-200"
                           ? "bg-gray-200"
-                          : "bg-slate-500/90";
+                          : rawColor === "bg-slate-200"
+                            ? "bg-slate-200"
+                            : "bg-slate-500/90";
 
   return (
     <button
@@ -100,7 +130,16 @@ function EventBlock({
     >
       <div className="flex h-full flex-col items-center justify-center overflow-hidden px-0.5 py-0.5 text-center text-xs sm:text-[13px]">
         <span className="shrink-0 font-mono">
-          {event.startTime}-{event.endTime}
+          {(() => {
+            const startSuffix = event.startTime.split(":").map(Number)[0] < 12 ? "AM" : "PM";
+            const endSuffix = event.endTime.split(":").map(Number)[0] < 12 ? "AM" : "PM";
+            const startStr =
+              startSuffix === endSuffix
+                ? formatTimeWithAmPm(event.startTime, false)
+                : formatTimeWithAmPm(event.startTime, true);
+            const endStr = formatTimeWithAmPm(event.endTime, true);
+            return `${startStr}-${endStr}`;
+          })()}
         </span>
         <span className="shrink-0 font-bold">
           {event.student_name ?? event.studentInitials}
@@ -115,8 +154,16 @@ function EventBlock({
 
 export default function ScheduleBoardPage() {
   const today = useMemo(() => startOfDay(new Date()), []);
+  const fetchStartDate = useMemo(
+    () => addDays(today, -MAX_DAYS_AHEAD),
+    [today]
+  );
+  const fetchDayCount = MAX_DAYS_AHEAD * 2;
   const { isLoggedIn, signIn, signOut } = useAuth();
-  const { events, refetch: refetchEvents } = useEvents(today, MAX_DAYS_AHEAD);
+  const { events: fetchedEvents, refetch: refetchEvents } = useEvents(
+    fetchStartDate,
+    fetchDayCount
+  );
   const { locations, refetch: refetchLocations } = useLocations();
 
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -137,6 +184,86 @@ export default function ScheduleBoardPage() {
     () => Array.from({ length: MAX_DAYS_AHEAD }, (_, i) => addDays(today, i)),
     [today]
   );
+
+  // 表示する 2 週間分のイベントを作る
+  // - 新しく増えた週（後半 7 日）で空白になっている日だけ、1 週間前→2 週間前の同曜日をコピーして表示
+  const visibleEvents = useMemo(() => {
+    const byFetchedDay = new Map<number, DisplayEvent[]>();
+    for (const ev of fetchedEvents) {
+      const arr = byFetchedDay.get(ev.dayIndex) ?? [];
+      arr.push(ev);
+      byFetchedDay.set(ev.dayIndex, arr);
+    }
+
+    const NEW_DAYS_START_INDEX = Math.floor(MAX_DAYS_AHEAD / 2); // 7
+    const fetchedOffset = MAX_DAYS_AHEAD; // destination dayIndex k => fetched dayIndex k+14
+
+    const copyDateAndTime = (
+      source: DisplayEvent,
+      destDayIndex: number,
+      destDateStr: string
+    ): DisplayEvent => {
+      const startIso = new Date(`${destDateStr}T${source.startTime}:00`).toISOString();
+      const endIso = new Date(`${destDateStr}T${source.endTime}:00`).toISOString();
+      return {
+        ...source,
+        date: destDateStr,
+        dayIndex: destDayIndex,
+        startIso,
+        endIso,
+      };
+    };
+
+    const result: DisplayEvent[] = [];
+
+    for (let destDayIndex = 0; destDayIndex < MAX_DAYS_AHEAD; destDayIndex++) {
+      const destDate = weekDates[destDayIndex];
+      const destDateStr = format(destDate, "yyyy-MM-dd");
+
+      const destFetchedDayIndex = destDayIndex + fetchedOffset;
+      const destEvents = byFetchedDay.get(destFetchedDayIndex) ?? [];
+
+      // 新しく増えた週の前半はそのまま表示（空白は空白のまま）
+      if (destDayIndex < NEW_DAYS_START_INDEX) {
+        for (const ev of destEvents) result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
+        continue;
+      }
+
+      if (destEvents.length > 0) {
+        for (const ev of destEvents) result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
+        continue;
+      }
+
+      const oneWeekFetchedDayIndex = destFetchedDayIndex - 7;
+      const oneWeekEvents = byFetchedDay.get(oneWeekFetchedDayIndex) ?? [];
+      if (oneWeekEvents.length > 0) {
+        for (const ev of oneWeekEvents) {
+          const copied = copyDateAndTime(ev, destDayIndex, destDateStr);
+          copied.isCopied = true;
+          // id はそのままだと編集が意図せず影響しうるため、表示用に一意化
+          copied.id = `${ev.id}__copy__d${destDayIndex}`;
+          result.push(copied);
+        }
+        continue;
+      }
+
+      const twoWeeksFetchedDayIndex = destFetchedDayIndex - 14;
+      const twoWeeksEvents = byFetchedDay.get(twoWeeksFetchedDayIndex) ?? [];
+      if (twoWeeksEvents.length > 0) {
+        for (const ev of twoWeeksEvents) {
+          const copied = copyDateAndTime(ev, destDayIndex, destDateStr);
+          copied.isCopied = true;
+          copied.id = `${ev.id}__copy__d${destDayIndex}`;
+          result.push(copied);
+        }
+        continue;
+      }
+      // 1週前も2週前も空なら空白のまま
+    }
+
+    result.sort((a, b) => new Date(a.startIso).getTime() - new Date(b.startIso).getTime());
+    return result;
+  }, [fetchedEvents, weekDates]);
 
   const hours = useMemo(
     () =>
@@ -316,7 +443,7 @@ export default function ScheduleBoardPage() {
                     />
                   ))}
                   <div className="absolute inset-0">
-                    {events
+                    {visibleEvents
                       .filter((e) => e.dayIndex === dayIndex)
                       .map((event) => (
                         <EventBlock
@@ -362,7 +489,7 @@ export default function ScheduleBoardPage() {
           initialEndTime={formInitialEndTime}
           startDate={today}
           dayCount={MAX_DAYS_AHEAD}
-          existingEvents={events}
+          existingEvents={visibleEvents}
           onClose={() => {
             setEventFormOpen(false);
             setSelectedEvent(null);
@@ -384,7 +511,7 @@ export default function ScheduleBoardPage() {
           initialEndTime={formInitialEndTime}
           startDate={today}
           dayCount={MAX_DAYS_AHEAD}
-          existingEvents={events}
+          existingEvents={visibleEvents}
           onClose={() => setEventFormOpen(false)}
           onSuccess={() => {
             refetchEvents();
