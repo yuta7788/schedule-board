@@ -85,7 +85,7 @@ function EventBlock({
       rawColor === "bg-slate-200";
 
   const bgClass = isJobStudent
-    ? "bg-slate-500/80"
+    ? "bg-slate-300"
     : rawColor === "bg-emerald-500/90"
       ? "bg-emerald-500/90"
       : rawColor === "bg-blue-500/90"
