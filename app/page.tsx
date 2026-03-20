@@ -19,6 +19,39 @@ const MINUTES_PER_PX = TOTAL_MINUTES / GRID_HEIGHT_PX;
 const HOUR_ROW_HEIGHT_PX = GRID_HEIGHT_PX / (GRID_END_HOUR - GRID_START_HOUR);
 const MAX_DAYS_AHEAD = 14;
 
+const EVENT_COLOR_NORMALIZE_MAP: Record<string, string> = {
+  // 旧色（既存データ/旧UI） -> 現行のくすんだパステルへ正規化
+  "bg-yellow-200": "bg-indigo-100",
+  "bg-sky-200": "bg-indigo-100",
+  "bg-blue-200": "bg-blue-100",
+  "bg-green-200": "bg-emerald-100",
+  "bg-red-200": "bg-rose-100",
+  "bg-purple-200": "bg-violet-100",
+  "bg-pink-200": "bg-fuchsia-100",
+  "bg-gray-200": "bg-stone-100",
+  "bg-slate-200": "bg-slate-200",
+  // 一部保存値互換
+  "bg-emerald-500/90": "bg-emerald-100",
+  "bg-blue-500/90": "bg-blue-100",
+  "bg-amber-500/90": "bg-stone-100",
+  "bg-violet-500/90": "bg-violet-100",
+};
+
+const LIGHT_EVENT_BG_CLASSES = new Set([
+  "bg-blue-100",
+  "bg-emerald-100",
+  "bg-rose-100",
+  "bg-indigo-100",
+  "bg-violet-100",
+  "bg-fuchsia-100",
+  "bg-stone-100",
+  "bg-slate-200",
+]);
+
+function normalizeColorClass(rawColor: string): string {
+  return EVENT_COLOR_NORMALIZE_MAP[rawColor] ?? rawColor;
+}
+
 function timeToMinutesFromStart(timeStr: string): number {
   const [h, m] = timeStr.split(":").map(Number);
   const startMinutes = GRID_START_HOUR * 60;
@@ -65,54 +98,20 @@ function EventBlock({
   const topPx = topMinutes / MINUTES_PER_PX;
   const heightPx = durationMinutes / MINUTES_PER_PX;
   const locationRawColor = event.locations?.color ?? event.locationColor ?? "";
-  // 既存データの bg-yellow-200（または bg-sky-200）を、見た目を寄せた bg-indigo-100 に正規化
-  const normalizedRawColor =
-    locationRawColor === "bg-yellow-200" || locationRawColor === "bg-sky-200"
-      ? "bg-indigo-100"
-      : locationRawColor;
+  // 既存データの旧色も含め、現行パレットへ正規化（見た目のみ）
+  const normalizedRawColor = normalizeColorClass(locationRawColor);
 
   const rawColor = isJobStudent ? "" : normalizedRawColor;
-  const isLightBg = isJobStudent
-    ? true
-    : rawColor === "bg-blue-200" ||
-      rawColor === "bg-green-200" ||
-      rawColor === "bg-red-200" ||
-      rawColor === "bg-indigo-100" ||
-      rawColor === "bg-sky-200" ||
-      rawColor === "bg-purple-200" ||
-      rawColor === "bg-pink-200" ||
-      rawColor === "bg-gray-200" ||
-      rawColor === "bg-slate-200";
+  const isLightBg = isJobStudent ? true : LIGHT_EVENT_BG_CLASSES.has(rawColor);
 
   const bgClass = isJobStudent
-    ? "bg-slate-300"
-    : rawColor === "bg-emerald-500/90"
-      ? "bg-emerald-500/90"
-      : rawColor === "bg-blue-500/90"
-        ? "bg-blue-500/90"
-        : rawColor === "bg-amber-500/90"
-          ? "bg-amber-500/90"
-          : rawColor === "bg-violet-500/90"
-            ? "bg-violet-500/90"
-            : rawColor === "bg-blue-200"
-              ? "bg-blue-200"
-              : rawColor === "bg-green-200"
-                ? "bg-green-200"
-                : rawColor === "bg-red-200"
-                  ? "bg-red-200"
-                  : rawColor === "bg-indigo-100"
-                    ? "bg-indigo-100"
-                    : rawColor === "bg-sky-200"
-                      ? "bg-sky-200"
-                    : rawColor === "bg-purple-200"
-                      ? "bg-purple-200"
-                      : rawColor === "bg-pink-200"
-                        ? "bg-pink-200"
-                        : rawColor === "bg-gray-200"
-                          ? "bg-gray-200"
-                          : rawColor === "bg-slate-200"
-                            ? "bg-slate-200"
-                            : "bg-slate-500/90";
+    ? // job は主張を弱める（他の予定のパステルと同じくらい控えめなグレー）
+      "bg-slate-200/70"
+    : LIGHT_EVENT_BG_CLASSES.has(rawColor)
+      ? rawColor
+      : "bg-slate-500/90";
+
+  const jobVisualClass = isJobStudent ? "shadow-sm shadow-slate-900/3 opacity-95" : "";
 
   return (
     <button
@@ -121,15 +120,21 @@ function EventBlock({
         e.stopPropagation();
         onClick();
       }}
-      className={`absolute left-0.5 right-0.5 rounded shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-1 ${bgClass} ${isLightBg ? "text-slate-900" : "text-white"}`}
+      className={`absolute left-0.5 right-0.5 rounded-2xl ring-1 ring-slate-900/5 shadow-md shadow-slate-900/5 transition hover:opacity-96 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:ring-offset-2 ${bgClass} ${
+        isLightBg ? "text-slate-900" : "text-white"
+      } ${jobVisualClass}`}
       style={{
         top: `${topPx}px`,
         height: `${heightPx}px`,
         minHeight: "28px",
       }}
     >
-      <div className="flex h-full flex-col items-center justify-center overflow-hidden px-0.5 py-0.5 text-center text-xs sm:text-[13px]">
-        <span className="shrink-0 font-mono">
+      <div className="flex h-full flex-col items-center justify-center overflow-hidden px-0.5 py-0.5 text-center leading-tight text-[11px]">
+        <span
+          className={`shrink-0 font-mono text-[10px] sm:text-[11px] ${
+            isJobStudent ? "font-semibold text-opacity-80" : "font-semibold text-opacity-95"
+          }`}
+        >
           {(() => {
             const startSuffix = event.startTime.split(":").map(Number)[0] < 12 ? "AM" : "PM";
             const endSuffix = event.endTime.split(":").map(Number)[0] < 12 ? "AM" : "PM";
@@ -141,10 +146,18 @@ function EventBlock({
             return `${startStr}-${endStr}`;
           })()}
         </span>
-        <span className="shrink-0 font-bold">
+        <span
+          className={`shrink-0 text-[12px] sm:text-[13px] ${
+            isJobStudent ? "font-bold opacity-90" : "font-extrabold"
+          }`}
+        >
           {event.student_name ?? event.studentInitials}
         </span>
-        <span className="truncate shrink-0 opacity-95">
+        <span
+          className={`truncate shrink-0 text-[10px] font-semibold sm:text-[11px] ${
+            isJobStudent ? "opacity-75" : "opacity-95"
+          }`}
+        >
           {event.locations?.name ?? event.locationName}
         </span>
       </div>
@@ -346,14 +359,6 @@ export default function ScheduleBoardPage() {
     setEventFormOpen(true);
   }
 
-  function openEditEvent(event: DisplayEvent) {
-    setSelectedEvent(event);
-    setFormInitialDate(event.date);
-    setFormInitialStartTime(event.startTime);
-    setFormInitialEndTime(event.endTime);
-    setEventFormOpen(true);
-  }
-
   function openEventDetails(event: DisplayEvent) {
     setSelectedEvent(event);
   }
@@ -361,15 +366,15 @@ export default function ScheduleBoardPage() {
   const showDetailsModal = !!selectedEvent && !eventFormOpen;
 
   return (
-    <div className="min-h-screen max-w-[100vw] overflow-x-hidden bg-slate-50">
-      <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
-        <span className="text-lg font-semibold text-slate-800 sm:text-xl">
+    <div className="min-h-screen max-w-[100vw] overflow-x-hidden bg-gradient-to-b from-slate-50 via-zinc-50 to-zinc-50">
+      <header className="flex shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/60 px-3 py-2 backdrop-blur">
+        <span className="text-[13px] font-bold text-slate-800 sm:text-[14px]">
           {monthLabel}
         </span>
         <button
           type="button"
           onClick={() => (isLoggedIn ? signOut() : setLoginModalOpen(true))}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          className="rounded-xl border border-slate-200 bg-white/70 px-3 py-1.5 text-[12px] font-bold text-slate-700 shadow-sm hover:bg-slate-50 active:translate-y-px focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
           {isLoggedIn ? "Logout" : "Login"}
         </button>
@@ -384,18 +389,18 @@ export default function ScheduleBoardPage() {
         <div className="flex min-w-max">
           <div
             ref={timeColumnRef}
-            className="sticky left-0 z-20 flex shrink-0 flex-col border-r border-slate-200 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
+            className="sticky left-0 z-20 flex shrink-0 flex-col border-r border-slate-200/70 bg-white/60 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] backdrop-blur"
             style={{ width: "56px" }}
           >
             <div
-              className="border-b border-slate-200 bg-slate-50/90"
+              className="border-b border-slate-200 bg-slate-50/70"
               style={{ height: "52px", minHeight: "52px" }}
             />
-            <div className="relative bg-white" style={{ height: GRID_HEIGHT_PX }}>
+            <div className="relative bg-white/40" style={{ height: GRID_HEIGHT_PX }}>
               {hours.map((hour) => (
                 <div
                   key={hour}
-                  className="absolute right-0 pr-2 text-xs font-medium text-slate-500 -translate-y-1/2"
+                  className="absolute right-0 pr-2 text-[11px] font-bold text-slate-500 -translate-y-1/2"
                   style={{
                     top: (hour - GRID_START_HOUR) * HOUR_ROW_HEIGHT_PX,
                   }}
@@ -410,18 +415,18 @@ export default function ScheduleBoardPage() {
             {weekDates.map((d, dayIndex) => (
               <div
                 key={d.toISOString()}
-                className="flex w-[120px] min-w-[120px] flex-col shrink-0 border-r border-slate-200 bg-white md:w-[150px] md:min-w-[150px]"
+                className="flex w-[120px] min-w-[120px] flex-col shrink-0 border-r border-slate-200/70 bg-white/60 md:w-[150px] md:min-w-[150px]"
                 data-day-column
                 data-date={d.toISOString()}
               >
                 <div
-                  className="flex flex-col items-center justify-center border-b border-slate-200 bg-slate-50/90 py-1.5 text-center"
+                  className="flex flex-col items-center justify-center border-b border-slate-200 bg-slate-50/60 py-1.5 text-center"
                   style={{ height: "52px", minHeight: "52px" }}
                 >
-                  <span className="text-xs font-medium text-slate-600">
+                  <span className="text-[11px] font-bold text-slate-600">
                     {format(d, "EEE", { locale: enUS })}
                   </span>
-                  <span className="text-sm font-medium text-slate-800">
+                  <span className="text-[13px] font-bold text-slate-800">
                     {format(d, "d")}
                   </span>
                 </div>
@@ -438,7 +443,7 @@ export default function ScheduleBoardPage() {
                   {hours.map((hour) => (
                     <div
                       key={hour}
-                      className="border-b border-slate-200"
+                      className="border-b border-slate-200/80"
                       style={{ height: HOUR_ROW_HEIGHT_PX }}
                     />
                   ))}

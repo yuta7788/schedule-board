@@ -20,17 +20,8 @@ export function StudentNameCombobox({
   placeholder = "Type or select student name",
   "aria-label": ariaLabel = "Student name",
 }: StudentNameComboboxProps) {
-  const [inputValue, setInputValue] = useState(value);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const prevValueRef = useRef(value);
-
-  useEffect(() => {
-    if (value !== prevValueRef.current) {
-      prevValueRef.current = value;
-      setInputValue(value);
-    }
-  }, [value]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -42,7 +33,7 @@ export function StudentNameCombobox({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const query = inputValue.trim().toLowerCase();
+  const query = value.trim().toLowerCase();
   const filtered =
     query === ""
       ? suggestions
@@ -53,14 +44,12 @@ export function StudentNameCombobox({
   }
 
   function handleSelect(name: string) {
-    setInputValue(name);
     onChange(name);
     setIsOpen(false);
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value;
-    setInputValue(v);
     onChange(v);
     setIsOpen(true);
   }
@@ -78,7 +67,7 @@ export function StudentNameCombobox({
         <input
           id={id}
           type="text"
-          value={inputValue}
+          value={value}
           onChange={handleInputChange}
           onFocus={handleFocus}
           onKeyDown={handleKeyDown}
@@ -89,7 +78,7 @@ export function StudentNameCombobox({
           aria-autocomplete="list"
           aria-controls={isOpen ? "student-name-listbox" : undefined}
           aria-label={ariaLabel}
-          className="w-full rounded-lg border border-slate-300 py-2 pl-3 pr-9 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded-xl border border-slate-200 bg-white/80 py-2.5 pl-3 pr-9 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         />
         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400">
           <ChevronDown
@@ -101,10 +90,14 @@ export function StudentNameCombobox({
         <ul
           id="student-name-listbox"
           role="listbox"
-          className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+          className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white/95 py-1.5 shadow-lg ring-1 ring-slate-900/5 backdrop-blur-sm"
         >
           {filtered.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-slate-500" role="option">
+            <li
+              className="px-3 py-2.5 text-sm text-slate-500"
+              role="option"
+              aria-selected={false}
+            >
               No matching student
             </li>
           ) : (
@@ -112,10 +105,10 @@ export function StudentNameCombobox({
               <li
                 key={name}
                 role="option"
-                aria-selected={name === inputValue}
+                aria-selected={name === value}
                 onClick={() => handleSelect(name)}
                 onMouseDown={(e) => e.preventDefault()}
-                className="cursor-pointer px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 focus:bg-slate-100"
+                className="cursor-pointer rounded-lg px-3 py-2.5 text-sm text-slate-800 hover:bg-slate-100 focus:bg-slate-100"
               >
                 {name}
               </li>

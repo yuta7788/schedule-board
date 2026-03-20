@@ -11,17 +11,42 @@ import { useStudentNames } from "@/hooks/useStudentNames";
 import { StudentNameCombobox } from "@/components/StudentNameCombobox";
 
 const COLOR_OPTIONS = [
-  "bg-blue-200",
-  "bg-green-200",
-  "bg-red-200",
-  // 黄色が強すぎるため、グレー味のある青に置き換え
+  // くすんだパステル（最小限で上品）
+  "bg-blue-100",
+  "bg-emerald-100",
+  "bg-rose-100",
+  // 黄色が強すぎるため、グレー味のある青に寄せる
   "bg-indigo-100",
-  "bg-purple-200",
-  "bg-pink-200",
-  "bg-gray-200",
-  // グレー系の追加枠
+  "bg-violet-100",
+  "bg-fuchsia-100",
+  "bg-stone-100",
   "bg-slate-200",
 ] as const;
+
+const EVENT_COLOR_NORMALIZE_MAP: Record<string, string> = {
+  // 旧色（既存データ/旧UI）
+  "bg-yellow-200": "bg-indigo-100",
+  "bg-sky-200": "bg-indigo-100",
+  "bg-blue-200": "bg-blue-100",
+  "bg-green-200": "bg-emerald-100",
+  "bg-red-200": "bg-rose-100",
+  "bg-purple-200": "bg-violet-100",
+  "bg-pink-200": "bg-fuchsia-100",
+  "bg-gray-200": "bg-stone-100",
+  "bg-slate-200": "bg-slate-200",
+  // 一部の保存値互換
+  "bg-emerald-500/90": "bg-emerald-100",
+  "bg-blue-500/90": "bg-blue-100",
+  "bg-amber-500/90": "bg-stone-100",
+  "bg-violet-500/90": "bg-violet-100",
+};
+
+function normalizeColorClass(rawColor: string): string {
+  const normalized = EVENT_COLOR_NORMALIZE_MAP[rawColor] ?? rawColor;
+  return COLOR_OPTIONS.includes(normalized as (typeof COLOR_OPTIONS)[number])
+    ? normalized
+    : COLOR_OPTIONS[0];
+}
 
 interface EventFormModalProps {
   mode: "add" | "edit";
@@ -55,7 +80,6 @@ export function EventFormModal({
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [studentName, setStudentName] = useState("");
-  const [locationId, setLocationId] = useState("");
   const [locationName, setLocationName] = useState("");
   const [address, setAddress] = useState("");
   const [selectedColor, setSelectedColor] = useState<string>(COLOR_OPTIONS[0]);
@@ -68,15 +92,11 @@ export function EventFormModal({
       setStartTime(event.startTime);
       setEndTime(event.endTime);
       setStudentName(event.student_name ?? event.studentInitials);
-      setLocationId(event.locationId);
       setLocationName(event.locationName);
       setAddress(event.address);
       const rawEventColor = event.locations?.color ?? event.locationColor ?? "";
-      // 旧色（bg-yellow-200 / bg-sky-200）を、新しい選択肢に正規化して表示する
-      const eventColor =
-        rawEventColor === "bg-yellow-200" || rawEventColor === "bg-sky-200"
-          ? "bg-indigo-100"
-          : rawEventColor;
+      // 旧色も含め、新しいパレットに正規化して表示する
+      const eventColor = normalizeColorClass(rawEventColor);
       setSelectedColor(
         COLOR_OPTIONS.includes(eventColor as (typeof COLOR_OPTIONS)[number])
           ? eventColor
@@ -87,7 +107,6 @@ export function EventFormModal({
       setStartTime(initialStartTime ?? "09:00");
       setEndTime(initialEndTime ?? "10:00");
       setStudentName("");
-      setLocationId("");
       setLocationName("");
       setAddress("");
       setSelectedColor(COLOR_OPTIONS[0]);
@@ -255,24 +274,24 @@ export function EventFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="event-form-title"
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white/80 p-6 shadow-lg ring-1 ring-slate-900/5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 id="event-form-title" className="text-lg font-semibold text-slate-900">
+          <h2 id="event-form-title" className="text-base font-semibold text-slate-900 sm:text-lg">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-slate-500 hover:bg-slate-100"
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:ring-offset-2"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -281,13 +300,16 @@ export function EventFormModal({
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {error && (
-            <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            <p
+              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              role="alert"
+            >
               {error}
             </p>
           )}
 
           <div>
-            <label htmlFor="event-date" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="event-date" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
               Date
             </label>
             <input
@@ -298,13 +320,13 @@ export function EventFormModal({
               max={maxDate}
               onChange={(e) => setDate(e.target.value)}
               required
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
 
           <div className="flex gap-4">
             <div className="flex-1">
-              <label htmlFor="event-start" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="event-start" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
                 Start Time
               </label>
               <input
@@ -312,11 +334,11 @@ export function EventFormModal({
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
             <div className="flex-1">
-              <label htmlFor="event-end" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="event-end" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
                 End Time
               </label>
               <input
@@ -324,13 +346,13 @@ export function EventFormModal({
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
           </div>
 
           <div>
-            <label htmlFor="event-student-name" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="event-student-name" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
               Student Name
             </label>
             <div className="mt-1">
@@ -346,7 +368,7 @@ export function EventFormModal({
           </div>
 
           <div>
-            <label htmlFor="event-location" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="event-location" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
               Location
             </label>
             <div className="mt-1">
@@ -356,22 +378,16 @@ export function EventFormModal({
                 value={locationName}
                 onSelect={(loc) => {
                   if (loc) {
-                    setLocationId(loc.id);
                     setLocationName(loc.name);
                     setAddress(loc.address ?? "");
-                    setSelectedColor(loc.color || COLOR_OPTIONS[0]);
+                    setSelectedColor(normalizeColorClass(loc.color || COLOR_OPTIONS[0]));
                   } else {
-                    setLocationId("");
                     setLocationName("");
                     setAddress("");
                   }
                 }}
                 onInputChange={(v) => {
                   setLocationName(v);
-                  // テキスト入力を始めたら既存ロケーション ID はリセットして新規扱いにする
-                  if (!v.trim()) {
-                    setLocationId("");
-                  }
                 }}
                 placeholder="Type or select location"
                 aria-label="Location"
@@ -380,7 +396,7 @@ export function EventFormModal({
           </div>
 
           <div>
-            <label htmlFor="event-address" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="event-address" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
               Address (optional)
             </label>
             <input
@@ -389,22 +405,22 @@ export function EventFormModal({
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Address or Google Maps link"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
 
           <div>
-            <p className="block text-sm font-medium text-slate-700">Color</p>
+            <p className="block text-xs font-medium uppercase tracking-wide text-slate-500">Color</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {COLOR_OPTIONS.map((colorClass) => (
                 <button
                   key={colorClass}
                   type="button"
                   onClick={() => setSelectedColor(colorClass)}
-                  className={`h-8 w-8 rounded-full ${colorClass} transition focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 ${
+                  className={`h-8 w-8 rounded-full ${colorClass} transition focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-2 ${
                     selectedColor === colorClass
-                      ? "ring-2 ring-offset-2 ring-slate-700"
-                      : "hover:opacity-90"
+                      ? "ring-2 ring-blue-600"
+                      : "ring-1 ring-slate-900/5 hover:opacity-90"
                   }`}
                   aria-label={`Select color ${colorClass}`}
                   aria-pressed={selectedColor === colorClass}
@@ -413,18 +429,18 @@ export function EventFormModal({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-xl bg-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-600 active:translate-y-px disabled:opacity-50 disabled:hover:bg-indigo-500"
             >
               {loading ? "Saving…" : "Save"}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 active:translate-y-px"
             >
               Cancel
             </button>
@@ -433,7 +449,7 @@ export function EventFormModal({
                 type="button"
                 onClick={handleDelete}
                 disabled={loading}
-                className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 shadow-sm hover:bg-red-50 active:translate-y-px disabled:opacity-50"
               >
                 Delete
               </button>
