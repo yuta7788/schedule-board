@@ -86,6 +86,9 @@ export function EventFormModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  /** DB に既存行がある編集（自動コピー枠 isCopied は「中身だけ同じ新規追加」） */
+  const isPersistedEdit = mode === "edit" && event != null && !event.isCopied;
+
   useEffect(() => {
     if (mode === "edit" && event) {
       setDate(event.date);
@@ -193,8 +196,10 @@ export function EventFormModal({
       // STEP 2: Overlap check using existing events (Array.some)
       const newStartMs = startDateTime.getTime();
       const newEndMs = endDateTime.getTime();
+      const persistedEventId = isPersistedEdit ? event!.id : null;
       const hasOverlap = existingEvents.some((e) => {
-        if (mode === "edit" && event && e.id === event.id) return false;
+        if (e.isCopied) return false;
+        if (persistedEventId != null && e.id === persistedEventId) return false;
         const existingStartMs = new Date(e.startIso).getTime();
         const existingEndMs = new Date(e.endIso).getTime();
         return newStartMs < existingEndMs && newEndMs > existingStartMs;
@@ -213,11 +218,11 @@ export function EventFormModal({
         location_id: resolvedLocationId,
       };
 
-      if (mode === "edit" && event) {
+      if (isPersistedEdit) {
         const { error: updateErr } = await supabase
           .from("events")
           .update(payload)
-          .eq("id", event.id);
+          .eq("id", event!.id);
         if (updateErr) {
           console.error("Save error:", updateErr);
           throw updateErr;
@@ -245,7 +250,7 @@ export function EventFormModal({
   }
 
   async function handleDelete() {
-    if (mode !== "edit" || !event) return;
+    if (!isPersistedEdit || !event) return;
     if (!confirm("Delete this event?")) return;
     setLoading(true);
     try {
@@ -265,7 +270,7 @@ export function EventFormModal({
     }
   }
 
-  const title = mode === "add" ? "Add Event" : "Edit Event";
+  const title = isPersistedEdit ? "Edit Event" : "Add Event";
   const minDate = format(startDate, "yyyy-MM-dd");
   const maxDate = format(
     new Date(startDate.getTime() + (dayCount - 1) * 24 * 60 * 60 * 1000),
@@ -444,7 +449,7 @@ export function EventFormModal({
             >
               Cancel
             </button>
-            {mode === "edit" && (
+            {isPersistedEdit && (
               <button
                 type="button"
                 onClick={handleDelete}

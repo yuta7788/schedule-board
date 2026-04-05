@@ -40,7 +40,7 @@ export interface DisplayEvent {
   address: string;
   locationId: string;
   studentInitials: string;
-  /** 表示のみのコピー枠（DBの実データではない） */
+  /** 表示のみのコピー枠（DBの実データではない。保存時は新規 INSERT のみ） */
   isCopied?: boolean;
 }
 

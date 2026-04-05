@@ -253,7 +253,7 @@ export default function ScheduleBoardPage() {
         for (const ev of oneWeekEvents) {
           const copied = copyDateAndTime(ev, destDayIndex, destDateStr);
           copied.isCopied = true;
-          // id はそのままだと編集が意図せず影響しうるため、表示用に一意化
+          // id はそのままだと React key / 重複が衝突するため表示用に一意化（DB行とは無関係）
           copied.id = `${ev.id}__copy__d${destDayIndex}`;
           result.push(copied);
         }
