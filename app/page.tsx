@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { addDays, format, startOfDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { useAuth } from "@/hooks/useAuth";
 import { useEvents, type DisplayEvent } from "@/hooks/useEvents";
 import { useLocations } from "@/hooks/useLocations";
+import type { LocationJoin } from "@/lib/types/database";
 import { LoginModal } from "@/components/LoginModal";
 import { EventDetailsModal } from "@/components/EventDetailsModal";
 import { EventFormModal } from "@/components/EventFormModal";
@@ -68,6 +69,77 @@ function formatHourLabel(hour: number): string {
   const suffix = hour < 12 ? "AM" : "PM";
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
   return `${hour12} ${suffix}`;
+}
+
+/** 自動コピー枠用。初回スナップショット以降、コピー元の DB 更新と連動しない */
+type FrozenAutoFillTemplate = Pick<
+  DisplayEvent,
+  | "student_name"
+  | "location_id"
+  | "startTime"
+  | "endTime"
+  | "locationName"
+  | "locationColor"
+  | "address"
+  | "locationId"
+  | "studentInitials"
+> & {
+  locations: LocationJoin | null;
+};
+
+function toFrozenTemplate(ev: DisplayEvent): FrozenAutoFillTemplate {
+  return {
+    student_name: ev.student_name,
+    location_id: ev.location_id,
+    startTime: ev.startTime,
+    endTime: ev.endTime,
+    locationName: ev.locationName,
+    locationColor: ev.locationColor,
+    address: ev.address,
+    locationId: ev.locationId,
+    studentInitials: ev.studentInitials,
+    locations: ev.locations ? { ...ev.locations } : null,
+  };
+}
+
+function displayFromFrozenTemplate(
+  t: FrozenAutoFillTemplate,
+  destDayIndex: number,
+  destDateStr: string,
+  slotIndex: number
+): DisplayEvent {
+  const startIso = new Date(`${destDateStr}T${t.startTime}:00`).toISOString();
+  const endIso = new Date(`${destDateStr}T${t.endTime}:00`).toISOString();
+  return {
+    id: `frozen__${destDateStr}__${slotIndex}`,
+    start_time: startIso,
+    end_time: endIso,
+    student_name: t.student_name,
+    location_id: t.location_id,
+    locations: t.locations ? { ...t.locations } : null,
+    date: destDateStr,
+    dayIndex: destDayIndex,
+    startTime: t.startTime,
+    endTime: t.endTime,
+    startIso,
+    endIso,
+    locationName: t.locationName,
+    locationColor: t.locationColor,
+    address: t.address,
+    locationId: t.locationId,
+    studentInitials: t.studentInitials,
+    isCopied: true,
+  };
+}
+
+function indexEventsByFetchedDay(events: DisplayEvent[]): Map<number, DisplayEvent[]> {
+  const byFetchedDay = new Map<number, DisplayEvent[]>();
+  for (const ev of events) {
+    const arr = byFetchedDay.get(ev.dayIndex) ?? [];
+    arr.push(ev);
+    byFetchedDay.set(ev.dayIndex, arr);
+  }
+  return byFetchedDay;
 }
 
 function formatTimeWithAmPm(timeStr: string, includeSuffix: boolean = true): string {
@@ -192,24 +264,63 @@ export default function ScheduleBoardPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timeColumnRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
+  /** 表示日付 → 自動コピー枠のスナップショット（コピー元更新と非連動） */
+  const frozenAutoFillRef = useRef<Map<string, FrozenAutoFillTemplate[]>>(new Map());
+  const [autoFillFrozenVersion, setAutoFillFrozenVersion] = useState(0);
 
   const weekDates = useMemo(
     () => Array.from({ length: MAX_DAYS_AHEAD }, (_, i) => addDays(today, i)),
     [today]
   );
 
-  // 表示する 2 週間分のイベントを作る
-  // - 新しく増えた週（後半 7 日）で空白になっている日だけ、1 週間前→2 週間前の同曜日をコピーして表示
-  const visibleEvents = useMemo(() => {
-    const byFetchedDay = new Map<number, DisplayEvent[]>();
-    for (const ev of fetchedEvents) {
-      const arr = byFetchedDay.get(ev.dayIndex) ?? [];
-      arr.push(ev);
-      byFetchedDay.set(ev.dayIndex, arr);
+  const NEW_DAYS_START_INDEX = Math.floor(MAX_DAYS_AHEAD / 2); // 7
+  const fetchedOffset = MAX_DAYS_AHEAD; // destination dayIndex k => fetched dayIndex k+14
+
+  // 後半週の空き日について、まだスナップショットが無ければ 1〜2 週前の内容を凍結（以降コピー元と連動しない）
+  useEffect(() => {
+    const byFetchedDay = indexEventsByFetchedDay(fetchedEvents);
+    const windowDates = new Set(weekDates.map((d) => format(d, "yyyy-MM-dd")));
+    let mutated = false;
+
+    for (const key of [...frozenAutoFillRef.current.keys()]) {
+      if (!windowDates.has(key)) {
+        frozenAutoFillRef.current.delete(key);
+        mutated = true;
+      }
     }
 
-    const NEW_DAYS_START_INDEX = Math.floor(MAX_DAYS_AHEAD / 2); // 7
-    const fetchedOffset = MAX_DAYS_AHEAD; // destination dayIndex k => fetched dayIndex k+14
+    for (let destDayIndex = NEW_DAYS_START_INDEX; destDayIndex < MAX_DAYS_AHEAD; destDayIndex++) {
+      const destDateStr = format(weekDates[destDayIndex], "yyyy-MM-dd");
+      const destFetchedDayIndex = destDayIndex + fetchedOffset;
+      const destEvents = byFetchedDay.get(destFetchedDayIndex) ?? [];
+
+      if (destEvents.length > 0) {
+        if (frozenAutoFillRef.current.has(destDateStr)) {
+          frozenAutoFillRef.current.delete(destDateStr);
+          mutated = true;
+        }
+        continue;
+      }
+
+      if (frozenAutoFillRef.current.has(destDateStr)) continue;
+
+      const destFetched = destFetchedDayIndex;
+      const oneWeekEvents = byFetchedDay.get(destFetched - 7) ?? [];
+      const source = oneWeekEvents.length > 0 ? oneWeekEvents : (byFetchedDay.get(destFetched - 14) ?? []);
+      if (source.length === 0) continue;
+
+      frozenAutoFillRef.current.set(destDateStr, source.map(toFrozenTemplate));
+      mutated = true;
+    }
+
+    if (mutated) setAutoFillFrozenVersion((v) => v + 1);
+  }, [fetchedEvents, weekDates]);
+
+  // 表示する 2 週間分のイベントを作る
+  // - 新しく増えた週（後半 7 日）で空白になっている日だけ、1 週間前→2 週間前の同曜日をコピーして表示
+  // - 自動コピーは初回だけ実データから取り、以降は frozenAutoFillRef のスナップショット（非連動）
+  const visibleEvents = useMemo(() => {
+    const byFetchedDay = indexEventsByFetchedDay(fetchedEvents);
 
     const copyDateAndTime = (
       source: DisplayEvent,
@@ -247,13 +358,20 @@ export default function ScheduleBoardPage() {
         continue;
       }
 
+      const frozenList = frozenAutoFillRef.current.get(destDateStr);
+      if (frozenList && frozenList.length > 0) {
+        for (let i = 0; i < frozenList.length; i++) {
+          result.push(displayFromFrozenTemplate(frozenList[i], destDayIndex, destDateStr, i));
+        }
+        continue;
+      }
+
       const oneWeekFetchedDayIndex = destFetchedDayIndex - 7;
       const oneWeekEvents = byFetchedDay.get(oneWeekFetchedDayIndex) ?? [];
       if (oneWeekEvents.length > 0) {
         for (const ev of oneWeekEvents) {
           const copied = copyDateAndTime(ev, destDayIndex, destDateStr);
           copied.isCopied = true;
-          // id はそのままだと React key / 重複が衝突するため表示用に一意化（DB行とは無関係）
           copied.id = `${ev.id}__copy__d${destDayIndex}`;
           result.push(copied);
         }
@@ -276,7 +394,7 @@ export default function ScheduleBoardPage() {
 
     result.sort((a, b) => new Date(a.startIso).getTime() - new Date(b.startIso).getTime());
     return result;
-  }, [fetchedEvents, weekDates]);
+  }, [fetchedEvents, weekDates, autoFillFrozenVersion]);
 
   const hours = useMemo(
     () =>
