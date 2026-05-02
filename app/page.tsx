@@ -142,6 +142,12 @@ function indexEventsByFetchedDay(events: DisplayEvent[]): Map<number, DisplayEve
   return byFetchedDay;
 }
 
+function eventSignature(
+  event: Pick<DisplayEvent, "startTime" | "endTime" | "student_name" | "location_id">
+): string {
+  return `${event.startTime}|${event.endTime}|${event.student_name}|${event.location_id}`;
+}
+
 function formatTimeWithAmPm(timeStr: string, includeSuffix: boolean = true): string {
   // expected: "HH:mm" (e.g. "09:30")
   const [hh, mm] = timeStr.split(":").map(Number);
@@ -294,14 +300,6 @@ export default function ScheduleBoardPage() {
       const destFetchedDayIndex = destDayIndex + fetchedOffset;
       const destEvents = byFetchedDay.get(destFetchedDayIndex) ?? [];
 
-      if (destEvents.length > 0) {
-        if (frozenAutoFillRef.current.has(destDateStr)) {
-          frozenAutoFillRef.current.delete(destDateStr);
-          mutated = true;
-        }
-        continue;
-      }
-
       if (frozenAutoFillRef.current.has(destDateStr)) continue;
 
       const destFetched = destFetchedDayIndex;
@@ -353,15 +351,16 @@ export default function ScheduleBoardPage() {
         continue;
       }
 
-      if (destEvents.length > 0) {
-        for (const ev of destEvents) result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
-        continue;
-      }
+      const realEventsInDestDay = destEvents.map((ev) => copyDateAndTime(ev, destDayIndex, destDateStr));
+      for (const ev of realEventsInDestDay) result.push(ev);
+      const realSignatures = new Set(realEventsInDestDay.map((ev) => eventSignature(ev)));
 
       const frozenList = frozenAutoFillRef.current.get(destDateStr);
       if (frozenList && frozenList.length > 0) {
         for (let i = 0; i < frozenList.length; i++) {
-          result.push(displayFromFrozenTemplate(frozenList[i], destDayIndex, destDateStr, i));
+          const frozenEvent = displayFromFrozenTemplate(frozenList[i], destDayIndex, destDateStr, i);
+          if (realSignatures.has(eventSignature(frozenEvent))) continue;
+          result.push(frozenEvent);
         }
         continue;
       }
