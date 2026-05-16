@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { format, parseISO } from "date-fns";
+import { differenceInCalendarDays, format, parseISO, startOfDay } from "date-fns";
 import { supabase } from "@/lib/supabase/client";
 import type { EventRow, LocationJoin } from "@/lib/types/database";
 
@@ -94,20 +94,15 @@ export function useEvents(startDate: Date, dayCount: number) {
 
       type Row = EventRowWithJoin;
       const rows = (data as Row[]) ?? [];
-      const startMs = startDate.getTime();
-      const endMs =
-        startDate.getTime() + dayCount * 24 * 60 * 60 * 1000;
+      // page.tsx の addDays / weekDates と同じ「暦日」基準。ms/86400000 だと
+      // 日付がずれ、左から6日目付近の列で予定が欠けることがある。
+      const rangeStartDay = startOfDay(startDate);
 
       const display: DisplayEvent[] = [];
 
       for (const row of rows) {
-        const startDateParsed = parseISO(row.start_time);
-        const eventStartMs = startDateParsed.getTime();
-        if (eventStartMs < startMs || eventStartMs >= endMs) continue;
-
-        const dayIndex = Math.floor(
-          (eventStartMs - startMs) / (24 * 60 * 60 * 1000)
-        );
+        const eventDay = startOfDay(parseISO(row.start_time));
+        const dayIndex = differenceInCalendarDays(eventDay, rangeStartDay);
         if (dayIndex < 0 || dayIndex >= dayCount) continue;
 
         display.push(toDisplayEvent(row, dayIndex));
