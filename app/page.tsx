@@ -19,6 +19,7 @@ const GRID_HEIGHT_PX = 600;
 const MINUTES_PER_PX = TOTAL_MINUTES / GRID_HEIGHT_PX;
 const HOUR_ROW_HEIGHT_PX = GRID_HEIGHT_PX / (GRID_END_HOUR - GRID_START_HOUR);
 const MAX_DAYS_AHEAD = 14;
+const FROZEN_AUTOFILL_STORAGE_KEY = "schedule-board:frozen-autofill:v1";
 
 const EVENT_COLOR_NORMALIZE_MAP: Record<string, string> = {
   // 旧色（既存データ/旧UI） -> 現行のくすんだパステルへ正規化
@@ -140,6 +141,25 @@ function indexEventsByFetchedDay(events: DisplayEvent[]): Map<number, DisplayEve
     byFetchedDay.set(ev.dayIndex, arr);
   }
   return byFetchedDay;
+}
+
+function isFrozenTemplateArray(value: unknown): value is FrozenAutoFillTemplate[] {
+  if (!Array.isArray(value)) return false;
+  return value.every((item) => {
+    if (item == null || typeof item !== "object") return false;
+    const obj = item as Record<string, unknown>;
+    return (
+      typeof obj.student_name === "string" &&
+      typeof obj.location_id === "string" &&
+      typeof obj.startTime === "string" &&
+      typeof obj.endTime === "string" &&
+      typeof obj.locationName === "string" &&
+      typeof obj.locationColor === "string" &&
+      typeof obj.address === "string" &&
+      typeof obj.locationId === "string" &&
+      typeof obj.studentInitials === "string"
+    );
+  });
 }
 
 function eventSignature(
@@ -282,6 +302,28 @@ export default function ScheduleBoardPage() {
   const NEW_DAYS_START_INDEX = Math.floor(MAX_DAYS_AHEAD / 2); // 7
   const fetchedOffset = MAX_DAYS_AHEAD; // destination dayIndex k => fetched dayIndex k+14
 
+  // 再読み込み後も「コピー元との非連動」を維持するため、凍結コピーを localStorage から復元
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(FROZEN_AUTOFILL_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed == null || typeof parsed !== "object") return;
+
+      const entries = Object.entries(parsed as Record<string, unknown>);
+      let mutated = false;
+      for (const [dateStr, value] of entries) {
+        if (frozenAutoFillRef.current.has(dateStr)) continue;
+        if (!isFrozenTemplateArray(value)) continue;
+        frozenAutoFillRef.current.set(dateStr, value);
+        mutated = true;
+      }
+      if (mutated) setAutoFillFrozenVersion((v) => v + 1);
+    } catch (err) {
+      console.warn("Failed to load frozen auto-fill cache:", err);
+    }
+  }, []);
+
   // 後半週の空き日について、まだスナップショットが無ければ 1〜2 週前の内容を凍結（以降コピー元と連動しない）
   useEffect(() => {
     const byFetchedDay = indexEventsByFetchedDay(fetchedEvents);
@@ -313,6 +355,16 @@ export default function ScheduleBoardPage() {
 
     if (mutated) setAutoFillFrozenVersion((v) => v + 1);
   }, [fetchedEvents, weekDates]);
+
+  // 凍結コピーを永続化（セッションまたぎでの連動復活を防止）
+  useEffect(() => {
+    try {
+      const payload = Object.fromEntries(frozenAutoFillRef.current.entries());
+      window.localStorage.setItem(FROZEN_AUTOFILL_STORAGE_KEY, JSON.stringify(payload));
+    } catch (err) {
+      console.warn("Failed to save frozen auto-fill cache:", err);
+    }
+  }, [autoFillFrozenVersion]);
 
   // 表示する 2 週間分のイベントを作る
   // - 新しく増えた週（後半 7 日）で空白になっている日だけ、1 週間前→2 週間前の同曜日をコピーして表示
@@ -537,7 +589,7 @@ export default function ScheduleBoardPage() {
                 data-date={d.toISOString()}
               >
                 <div
-                  className="flex flex-col items-center justify-center border-b border-slate-200 bg-slate-50/60 py-1.5 text-center"
+                  className="relative z-20 flex flex-col items-center justify-center border-b border-slate-200 bg-slate-50/60 py-1.5 text-center"
                   style={{ height: "52px", minHeight: "52px" }}
                 >
                   <span className="text-[11px] font-bold text-slate-600">
@@ -548,7 +600,7 @@ export default function ScheduleBoardPage() {
                   </span>
                 </div>
                 <div
-                  className="relative"
+                  className="relative overflow-hidden"
                   style={{ height: GRID_HEIGHT_PX }}
                 onClick={(e) => {
                   if (!isLoggedIn) return;
