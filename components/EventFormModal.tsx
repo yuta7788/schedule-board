@@ -86,8 +86,7 @@ export function EventFormModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  /** DB に既存行がある編集（自動コピー枠 isCopied は「中身だけ同じ新規追加」） */
-  const isPersistedEdit = mode === "edit" && event != null && !event.isCopied;
+  const isPersistedEdit = mode === "edit" && event != null;
 
   useEffect(() => {
     if (mode === "edit" && event) {
@@ -198,7 +197,6 @@ export function EventFormModal({
       const newEndMs = endDateTime.getTime();
       const persistedEventId = isPersistedEdit ? event!.id : null;
       const hasOverlap = existingEvents.some((e) => {
-        if (e.isCopied) return false;
         if (persistedEventId != null && e.id === persistedEventId) return false;
         const existingStartMs = new Date(e.startIso).getTime();
         const existingEndMs = new Date(e.endIso).getTime();

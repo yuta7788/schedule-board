@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { addDays, format, startOfDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { useAuth } from "@/hooks/useAuth";
 import { useEvents, type DisplayEvent } from "@/hooks/useEvents";
+import { useMaterializeAutoFill } from "@/hooks/useMaterializeAutoFill";
 import { useLocations } from "@/hooks/useLocations";
-import type { LocationJoin } from "@/lib/types/database";
 import { LoginModal } from "@/components/LoginModal";
 import { EventDetailsModal } from "@/components/EventDetailsModal";
 import { EventFormModal } from "@/components/EventFormModal";
@@ -19,7 +19,6 @@ const GRID_HEIGHT_PX = 600;
 const MINUTES_PER_PX = TOTAL_MINUTES / GRID_HEIGHT_PX;
 const HOUR_ROW_HEIGHT_PX = GRID_HEIGHT_PX / (GRID_END_HOUR - GRID_START_HOUR);
 const MAX_DAYS_AHEAD = 14;
-const FROZEN_AUTOFILL_STORAGE_KEY = "schedule-board:frozen-autofill:v1";
 
 const EVENT_COLOR_NORMALIZE_MAP: Record<string, string> = {
   // 旧色（既存データ/旧UI） -> 現行のくすんだパステルへ正規化
@@ -72,67 +71,6 @@ function formatHourLabel(hour: number): string {
   return `${hour12} ${suffix}`;
 }
 
-/** 自動コピー枠用。初回スナップショット以降、コピー元の DB 更新と連動しない */
-type FrozenAutoFillTemplate = Pick<
-  DisplayEvent,
-  | "student_name"
-  | "location_id"
-  | "startTime"
-  | "endTime"
-  | "locationName"
-  | "locationColor"
-  | "address"
-  | "locationId"
-  | "studentInitials"
-> & {
-  locations: LocationJoin | null;
-};
-
-function toFrozenTemplate(ev: DisplayEvent): FrozenAutoFillTemplate {
-  return {
-    student_name: ev.student_name,
-    location_id: ev.location_id,
-    startTime: ev.startTime,
-    endTime: ev.endTime,
-    locationName: ev.locationName,
-    locationColor: ev.locationColor,
-    address: ev.address,
-    locationId: ev.locationId,
-    studentInitials: ev.studentInitials,
-    locations: ev.locations ? { ...ev.locations } : null,
-  };
-}
-
-function displayFromFrozenTemplate(
-  t: FrozenAutoFillTemplate,
-  destDayIndex: number,
-  destDateStr: string,
-  slotIndex: number
-): DisplayEvent {
-  const startIso = new Date(`${destDateStr}T${t.startTime}:00`).toISOString();
-  const endIso = new Date(`${destDateStr}T${t.endTime}:00`).toISOString();
-  return {
-    id: `frozen__${destDateStr}__${slotIndex}`,
-    start_time: startIso,
-    end_time: endIso,
-    student_name: t.student_name,
-    location_id: t.location_id,
-    locations: t.locations ? { ...t.locations } : null,
-    date: destDateStr,
-    dayIndex: destDayIndex,
-    startTime: t.startTime,
-    endTime: t.endTime,
-    startIso,
-    endIso,
-    locationName: t.locationName,
-    locationColor: t.locationColor,
-    address: t.address,
-    locationId: t.locationId,
-    studentInitials: t.studentInitials,
-    isCopied: true,
-  };
-}
-
 function indexEventsByFetchedDay(events: DisplayEvent[]): Map<number, DisplayEvent[]> {
   const byFetchedDay = new Map<number, DisplayEvent[]>();
   for (const ev of events) {
@@ -141,31 +79,6 @@ function indexEventsByFetchedDay(events: DisplayEvent[]): Map<number, DisplayEve
     byFetchedDay.set(ev.dayIndex, arr);
   }
   return byFetchedDay;
-}
-
-function isFrozenTemplateArray(value: unknown): value is FrozenAutoFillTemplate[] {
-  if (!Array.isArray(value)) return false;
-  return value.every((item) => {
-    if (item == null || typeof item !== "object") return false;
-    const obj = item as Record<string, unknown>;
-    return (
-      typeof obj.student_name === "string" &&
-      typeof obj.location_id === "string" &&
-      typeof obj.startTime === "string" &&
-      typeof obj.endTime === "string" &&
-      typeof obj.locationName === "string" &&
-      typeof obj.locationColor === "string" &&
-      typeof obj.address === "string" &&
-      typeof obj.locationId === "string" &&
-      typeof obj.studentInitials === "string"
-    );
-  });
-}
-
-function eventSignature(
-  event: Pick<DisplayEvent, "startTime" | "endTime" | "student_name" | "location_id">
-): string {
-  return `${event.startTime}|${event.endTime}|${event.student_name}|${event.location_id}`;
 }
 
 function formatTimeWithAmPm(timeStr: string, includeSuffix: boolean = true): string {
@@ -290,9 +203,6 @@ export default function ScheduleBoardPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const timeColumnRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
-  /** 表示日付 → 自動コピー枠のスナップショット（コピー元更新と非連動） */
-  const frozenAutoFillRef = useRef<Map<string, FrozenAutoFillTemplate[]>>(new Map());
-  const [autoFillFrozenVersion, setAutoFillFrozenVersion] = useState(0);
 
   const weekDates = useMemo(
     () => Array.from({ length: MAX_DAYS_AHEAD }, (_, i) => addDays(today, i)),
@@ -302,73 +212,16 @@ export default function ScheduleBoardPage() {
   const NEW_DAYS_START_INDEX = Math.floor(MAX_DAYS_AHEAD / 2); // 7
   const fetchedOffset = MAX_DAYS_AHEAD; // destination dayIndex k => fetched dayIndex k+14
 
-  // 再読み込み後も「コピー元との非連動」を維持するため、凍結コピーを localStorage から復元
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(FROZEN_AUTOFILL_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed == null || typeof parsed !== "object") return;
+  useMaterializeAutoFill({
+    isLoggedIn,
+    weekDates,
+    fetchedEvents,
+    newDaysStartIndex: NEW_DAYS_START_INDEX,
+    maxDaysAhead: MAX_DAYS_AHEAD,
+    fetchedOffset,
+    refetchEvents,
+  });
 
-      const entries = Object.entries(parsed as Record<string, unknown>);
-      let mutated = false;
-      for (const [dateStr, value] of entries) {
-        if (frozenAutoFillRef.current.has(dateStr)) continue;
-        if (!isFrozenTemplateArray(value)) continue;
-        frozenAutoFillRef.current.set(dateStr, value);
-        mutated = true;
-      }
-      if (mutated) setAutoFillFrozenVersion((v) => v + 1);
-    } catch (err) {
-      console.warn("Failed to load frozen auto-fill cache:", err);
-    }
-  }, []);
-
-  // 後半週の空き日について、まだスナップショットが無ければ 1〜2 週前の内容を凍結（以降コピー元と連動しない）
-  useEffect(() => {
-    const byFetchedDay = indexEventsByFetchedDay(fetchedEvents);
-    const windowDates = new Set(weekDates.map((d) => format(d, "yyyy-MM-dd")));
-    let mutated = false;
-
-    for (const key of [...frozenAutoFillRef.current.keys()]) {
-      if (!windowDates.has(key)) {
-        frozenAutoFillRef.current.delete(key);
-        mutated = true;
-      }
-    }
-
-    for (let destDayIndex = NEW_DAYS_START_INDEX; destDayIndex < MAX_DAYS_AHEAD; destDayIndex++) {
-      const destDateStr = format(weekDates[destDayIndex], "yyyy-MM-dd");
-      const destFetchedDayIndex = destDayIndex + fetchedOffset;
-      const destEvents = byFetchedDay.get(destFetchedDayIndex) ?? [];
-
-      if (frozenAutoFillRef.current.has(destDateStr)) continue;
-
-      const destFetched = destFetchedDayIndex;
-      const oneWeekEvents = byFetchedDay.get(destFetched - 7) ?? [];
-      const source = oneWeekEvents.length > 0 ? oneWeekEvents : (byFetchedDay.get(destFetched - 14) ?? []);
-      if (source.length === 0) continue;
-
-      frozenAutoFillRef.current.set(destDateStr, source.map(toFrozenTemplate));
-      mutated = true;
-    }
-
-    if (mutated) setAutoFillFrozenVersion((v) => v + 1);
-  }, [fetchedEvents, weekDates]);
-
-  // 凍結コピーを永続化（セッションまたぎでの連動復活を防止）
-  useEffect(() => {
-    try {
-      const payload = Object.fromEntries(frozenAutoFillRef.current.entries());
-      window.localStorage.setItem(FROZEN_AUTOFILL_STORAGE_KEY, JSON.stringify(payload));
-    } catch (err) {
-      console.warn("Failed to save frozen auto-fill cache:", err);
-    }
-  }, [autoFillFrozenVersion]);
-
-  // 表示する 2 週間分のイベントを作る
-  // - 新しく増えた週（後半 7 日）で空白になっている日だけ、1 週間前→2 週間前の同曜日をコピーして表示
-  // - 自動コピーは初回だけ実データから取り、以降は frozenAutoFillRef のスナップショット（非連動）
   const visibleEvents = useMemo(() => {
     const byFetchedDay = indexEventsByFetchedDay(fetchedEvents);
 
@@ -397,55 +250,14 @@ export default function ScheduleBoardPage() {
       const destFetchedDayIndex = destDayIndex + fetchedOffset;
       const destEvents = byFetchedDay.get(destFetchedDayIndex) ?? [];
 
-      // 新しく増えた週の前半はそのまま表示（空白は空白のまま）
-      if (destDayIndex < NEW_DAYS_START_INDEX) {
-        for (const ev of destEvents) result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
-        continue;
+      for (const ev of destEvents) {
+        result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
       }
-
-      const realEventsInDestDay = destEvents.map((ev) => copyDateAndTime(ev, destDayIndex, destDateStr));
-      for (const ev of realEventsInDestDay) result.push(ev);
-      const realSignatures = new Set(realEventsInDestDay.map((ev) => eventSignature(ev)));
-
-      const frozenList = frozenAutoFillRef.current.get(destDateStr);
-      if (frozenList && frozenList.length > 0) {
-        for (let i = 0; i < frozenList.length; i++) {
-          const frozenEvent = displayFromFrozenTemplate(frozenList[i], destDayIndex, destDateStr, i);
-          if (realSignatures.has(eventSignature(frozenEvent))) continue;
-          result.push(frozenEvent);
-        }
-        continue;
-      }
-
-      const oneWeekFetchedDayIndex = destFetchedDayIndex - 7;
-      const oneWeekEvents = byFetchedDay.get(oneWeekFetchedDayIndex) ?? [];
-      if (oneWeekEvents.length > 0) {
-        for (const ev of oneWeekEvents) {
-          const copied = copyDateAndTime(ev, destDayIndex, destDateStr);
-          copied.isCopied = true;
-          copied.id = `${ev.id}__copy__d${destDayIndex}`;
-          result.push(copied);
-        }
-        continue;
-      }
-
-      const twoWeeksFetchedDayIndex = destFetchedDayIndex - 14;
-      const twoWeeksEvents = byFetchedDay.get(twoWeeksFetchedDayIndex) ?? [];
-      if (twoWeeksEvents.length > 0) {
-        for (const ev of twoWeeksEvents) {
-          const copied = copyDateAndTime(ev, destDayIndex, destDateStr);
-          copied.isCopied = true;
-          copied.id = `${ev.id}__copy__d${destDayIndex}`;
-          result.push(copied);
-        }
-        continue;
-      }
-      // 1週前も2週前も空なら空白のまま
     }
 
     result.sort((a, b) => new Date(a.startIso).getTime() - new Date(b.startIso).getTime());
     return result;
-  }, [fetchedEvents, weekDates, autoFillFrozenVersion]);
+  }, [fetchedEvents, weekDates]);
 
   const hours = useMemo(
     () =>
