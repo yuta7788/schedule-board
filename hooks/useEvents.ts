@@ -40,6 +40,8 @@ export interface DisplayEvent {
   address: string;
   locationId: string;
   studentInitials: string;
+  /** DB 未登録の表示用プレビュー（未ログイン向け・materialize 前） */
+  isPreviewOnly?: boolean;
 }
 
 function toDisplayEvent(row: EventRowWithJoin, dayIndex: number): DisplayEvent {

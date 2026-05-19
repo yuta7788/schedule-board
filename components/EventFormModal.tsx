@@ -86,7 +86,8 @@ export function EventFormModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const isPersistedEdit = mode === "edit" && event != null;
+  const isPersistedEdit =
+    mode === "edit" && event != null && !event.isPreviewOnly;
 
   useEffect(() => {
     if (mode === "edit" && event) {
@@ -197,6 +198,7 @@ export function EventFormModal({
       const newEndMs = endDateTime.getTime();
       const persistedEventId = isPersistedEdit ? event!.id : null;
       const hasOverlap = existingEvents.some((e) => {
+        if (e.isPreviewOnly) return false;
         if (persistedEventId != null && e.id === persistedEventId) return false;
         const existingStartMs = new Date(e.startIso).getTime();
         const existingEndMs = new Date(e.endIso).getTime();

@@ -81,6 +81,34 @@ function indexEventsByFetchedDay(events: DisplayEvent[]): Map<number, DisplayEve
   return byFetchedDay;
 }
 
+/** 後半週で DB に予定がない日: 1〜2 週前の同曜日を表示用に並べる（未ログインでも閲覧可） */
+function appendPreviewAutoFillCopies(
+  result: DisplayEvent[],
+  byFetchedDay: Map<number, DisplayEvent[]>,
+  destDayIndex: number,
+  destDateStr: string,
+  destFetchedDayIndex: number,
+  copyDateAndTime: (
+    source: DisplayEvent,
+    destDayIndex: number,
+    destDateStr: string
+  ) => DisplayEvent
+) {
+  const oneWeekEvents = byFetchedDay.get(destFetchedDayIndex - 7) ?? [];
+  const source =
+    oneWeekEvents.length > 0
+      ? oneWeekEvents
+      : (byFetchedDay.get(destFetchedDayIndex - 14) ?? []);
+  if (source.length === 0) return;
+
+  source.forEach((ev, i) => {
+    const copied = copyDateAndTime(ev, destDayIndex, destDateStr);
+    copied.isPreviewOnly = true;
+    copied.id = `preview__${destDateStr}__${i}`;
+    result.push(copied);
+  });
+}
+
 function formatTimeWithAmPm(timeStr: string, includeSuffix: boolean = true): string {
   // expected: "HH:mm" (e.g. "09:30")
   const [hh, mm] = timeStr.split(":").map(Number);
@@ -252,6 +280,18 @@ export default function ScheduleBoardPage() {
 
       for (const ev of destEvents) {
         result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
+      }
+
+      // 後半週: DB が空の日はプレビュー表示（未ログイン閲覧 / ログイン後の materialize 完了前）
+      if (destDayIndex >= NEW_DAYS_START_INDEX && destEvents.length === 0) {
+        appendPreviewAutoFillCopies(
+          result,
+          byFetchedDay,
+          destDayIndex,
+          destDateStr,
+          destFetchedDayIndex,
+          copyDateAndTime
+        );
       }
     }
 
