@@ -289,10 +289,8 @@ export default function ScheduleBoardPage() {
         result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
       }
 
-      // 後半週: DB が空の日はプレビュー表示（未ログイン閲覧のみ）
-      // ログイン時は materialize 済みの実予定だけ表示し、Delete 可能にする
+      // 後半週: DB が空の日はプレビュー表示（ログイン状態に関わらず同じルール）
       if (
-        !isLoggedIn &&
         destDayIndex >= NEW_DAYS_START_INDEX &&
         destEvents.length === 0 &&
         !isAutoFillSuppressed(destDateStr)
@@ -310,7 +308,7 @@ export default function ScheduleBoardPage() {
 
     result.sort((a, b) => new Date(a.startIso).getTime() - new Date(b.startIso).getTime());
     return result;
-  }, [fetchedEvents, weekDates, isLoggedIn]);
+  }, [fetchedEvents, weekDates]);
 
   const hours = useMemo(
     () =>
