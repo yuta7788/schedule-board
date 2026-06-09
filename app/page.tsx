@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { addDays, format, startOfDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { useAuth } from "@/hooks/useAuth";
 import { useEvents, type DisplayEvent } from "@/hooks/useEvents";
 import { useMaterializeAutoFill } from "@/hooks/useMaterializeAutoFill";
 import { useLocations } from "@/hooks/useLocations";
+import { isAutoFillSuppressed, pruneSuppressedDates } from "@/lib/autoFillSuppression";
 import { LoginModal } from "@/components/LoginModal";
 import { EventDetailsModal } from "@/components/EventDetailsModal";
 import { EventFormModal } from "@/components/EventFormModal";
@@ -237,6 +238,12 @@ export default function ScheduleBoardPage() {
     [today]
   );
 
+  useEffect(() => {
+    pruneSuppressedDates(
+      new Set(weekDates.map((d) => format(d, "yyyy-MM-dd")))
+    );
+  }, [weekDates]);
+
   const NEW_DAYS_START_INDEX = Math.floor(MAX_DAYS_AHEAD / 2); // 7
   const fetchedOffset = MAX_DAYS_AHEAD; // destination dayIndex k => fetched dayIndex k+14
 
@@ -282,8 +289,14 @@ export default function ScheduleBoardPage() {
         result.push(copyDateAndTime(ev, destDayIndex, destDateStr));
       }
 
-      // 後半週: DB が空の日はプレビュー表示（未ログイン閲覧 / ログイン後の materialize 完了前）
-      if (destDayIndex >= NEW_DAYS_START_INDEX && destEvents.length === 0) {
+      // 後半週: DB が空の日はプレビュー表示（未ログイン閲覧のみ）
+      // ログイン時は materialize 済みの実予定だけ表示し、Delete 可能にする
+      if (
+        !isLoggedIn &&
+        destDayIndex >= NEW_DAYS_START_INDEX &&
+        destEvents.length === 0 &&
+        !isAutoFillSuppressed(destDateStr)
+      ) {
         appendPreviewAutoFillCopies(
           result,
           byFetchedDay,
@@ -297,7 +310,7 @@ export default function ScheduleBoardPage() {
 
     result.sort((a, b) => new Date(a.startIso).getTime() - new Date(b.startIso).getTime());
     return result;
-  }, [fetchedEvents, weekDates]);
+  }, [fetchedEvents, weekDates, isLoggedIn]);
 
   const hours = useMemo(
     () =>

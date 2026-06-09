@@ -9,6 +9,7 @@ import type { LocationRow } from "@/lib/types/database";
 import { LocationCombobox } from "@/components/LocationCombobox";
 import { useStudentNames } from "@/hooks/useStudentNames";
 import { StudentNameCombobox } from "@/components/StudentNameCombobox";
+import { suppressAutoFillForDate } from "@/lib/autoFillSuppression";
 
 const COLOR_OPTIONS = [
   // くすんだパステル（最小限で上品）
@@ -256,6 +257,12 @@ export function EventFormModal({
     try {
       const { error: err } = await supabase.from("events").delete().eq("id", event.id);
       if (err) throw err;
+      const remainingOnDate = existingEvents.filter(
+        (e) => !e.isPreviewOnly && e.date === event.date && e.id !== event.id
+      );
+      if (remainingOnDate.length === 0) {
+        suppressAutoFillForDate(event.date);
+      }
       onSuccess();
       onClose();
     } catch (err) {

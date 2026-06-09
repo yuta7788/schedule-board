@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabase/client";
 import type { DisplayEvent } from "@/hooks/useEvents";
+import { isAutoFillSuppressed } from "@/lib/autoFillSuppression";
 
 const AUTOFILL_PROCESSED_STORAGE_KEY = "schedule-board:autofill-processed:v1";
 
@@ -95,6 +96,10 @@ export function useMaterializeAutoFill({
     for (let destDayIndex = newDaysStartIndex; destDayIndex < maxDaysAhead; destDayIndex++) {
       const destDateStr = format(weekDates[destDayIndex], "yyyy-MM-dd");
       if (processedDates.has(destDateStr)) continue;
+      if (isAutoFillSuppressed(destDateStr)) {
+        markDateProcessed(windowKey, destDateStr);
+        continue;
+      }
 
       const destFetchedDayIndex = destDayIndex + fetchedOffset;
       const destEvents = byFetchedDay.get(destFetchedDayIndex) ?? [];
