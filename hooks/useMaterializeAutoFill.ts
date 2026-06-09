@@ -2,42 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { format } from "date-fns";
-import { supabase } from "@/lib/supabase/client";
 import type { DisplayEvent } from "@/hooks/useEvents";
 import { isAutoFillSuppressed } from "@/lib/autoFillSuppression";
-
-const AUTOFILL_PROCESSED_STORAGE_KEY = "schedule-board:autofill-processed:v1";
-
-type ProcessedStore = Record<string, string[]>;
-
-function loadProcessedStore(): ProcessedStore {
-  try {
-    const raw = window.localStorage.getItem(AUTOFILL_PROCESSED_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed == null || typeof parsed !== "object") return {};
-    return parsed as ProcessedStore;
-  } catch {
-    return {};
-  }
-}
-
-function saveProcessedStore(store: ProcessedStore) {
-  window.localStorage.setItem(AUTOFILL_PROCESSED_STORAGE_KEY, JSON.stringify(store));
-}
-
-function getProcessedDates(windowKey: string): Set<string> {
-  const store = loadProcessedStore();
-  return new Set(store[windowKey] ?? []);
-}
-
-function markDateProcessed(windowKey: string, dateStr: string) {
-  const store = loadProcessedStore();
-  const dates = new Set(store[windowKey] ?? []);
-  dates.add(dateStr);
-  store[windowKey] = [...dates];
-  saveProcessedStore(store);
-}
+import {
+  getAutoFillSourceEvents,
+  getProcessedAutoFillDates,
+  insertMaterializedEvents,
+  markAutoFillDateProcessed,
+} from "@/lib/autoFillMaterialize";
 
 function indexEventsByFetchedDay(events: DisplayEvent[]): Map<number, DisplayEvent[]> {
   const byFetchedDay = new Map<number, DisplayEvent[]>();
@@ -56,7 +28,7 @@ interface UseMaterializeAutoFillOptions {
   newDaysStartIndex: number;
   maxDaysAhead: number;
   fetchedOffset: number;
-  refetchEvents: () => Promise<void> | void;
+  refetchEvents: () => Promise<unknown> | void;
 }
 
 /**
@@ -78,17 +50,12 @@ export function useMaterializeAutoFill({
     if (!isLoggedIn || materializingRef.current || weekDates.length === 0) return;
 
     const windowKey = format(weekDates[0], "yyyy-MM-dd");
-    const processedDates = getProcessedDates(windowKey);
+    const processedDates = getProcessedAutoFillDates(windowKey);
     const byFetchedDay = indexEventsByFetchedDay(fetchedEvents);
 
     type PendingInsert = {
       destDateStr: string;
-      payloads: {
-        start_time: string;
-        end_time: string;
-        student_name: string;
-        location_id: string;
-      }[];
+      source: DisplayEvent[];
     };
 
     const pending: PendingInsert[] = [];
@@ -97,7 +64,7 @@ export function useMaterializeAutoFill({
       const destDateStr = format(weekDates[destDayIndex], "yyyy-MM-dd");
       if (processedDates.has(destDateStr)) continue;
       if (isAutoFillSuppressed(destDateStr)) {
-        markDateProcessed(windowKey, destDateStr);
+        markAutoFillDateProcessed(windowKey, destDateStr);
         continue;
       }
 
@@ -105,30 +72,18 @@ export function useMaterializeAutoFill({
       const destEvents = byFetchedDay.get(destFetchedDayIndex) ?? [];
 
       if (destEvents.length > 0) {
-        markDateProcessed(windowKey, destDateStr);
+        markAutoFillDateProcessed(windowKey, destDateStr);
         continue;
       }
 
-      const oneWeekEvents = byFetchedDay.get(destFetchedDayIndex - 7) ?? [];
-      const source =
-        oneWeekEvents.length > 0
-          ? oneWeekEvents
-          : (byFetchedDay.get(destFetchedDayIndex - 14) ?? []);
+      const source = getAutoFillSourceEvents(byFetchedDay, destFetchedDayIndex);
 
       if (source.length === 0) {
-        markDateProcessed(windowKey, destDateStr);
+        markAutoFillDateProcessed(windowKey, destDateStr);
         continue;
       }
 
-      pending.push({
-        destDateStr,
-        payloads: source.map((ev) => ({
-          start_time: new Date(`${destDateStr}T${ev.startTime}:00`).toISOString(),
-          end_time: new Date(`${destDateStr}T${ev.endTime}:00`).toISOString(),
-          student_name: ev.student_name,
-          location_id: ev.location_id,
-        })),
-      });
+      pending.push({ destDateStr, source });
     }
 
     if (pending.length === 0) return;
@@ -138,13 +93,14 @@ export function useMaterializeAutoFill({
     void (async () => {
       try {
         let anyInserted = false;
-        for (const { destDateStr, payloads } of pending) {
-          const { error } = await supabase.from("events").insert(payloads);
-          if (error) {
+        for (const { destDateStr, source } of pending) {
+          try {
+            await insertMaterializedEvents(destDateStr, source);
+          } catch (error) {
             console.error("Auto-fill materialize failed:", destDateStr, error);
             continue;
           }
-          markDateProcessed(windowKey, destDateStr);
+          markAutoFillDateProcessed(windowKey, destDateStr);
           anyInserted = true;
         }
         if (anyInserted) await refetchEvents();

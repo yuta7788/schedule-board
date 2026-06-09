@@ -59,6 +59,7 @@ interface EventFormModalProps {
   startDate: Date;
   dayCount: number;
   existingEvents: DisplayEvent[];
+  ensureEventPersistedForEdit?: (event: DisplayEvent) => Promise<DisplayEvent>;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -73,6 +74,7 @@ export function EventFormModal({
   startDate,
   dayCount,
   existingEvents,
+  ensureEventPersistedForEdit,
   onClose,
   onSuccess,
 }: EventFormModalProps) {
@@ -87,8 +89,9 @@ export function EventFormModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const isPersistedEdit =
-    mode === "edit" && event != null && !event.isPreviewOnly;
+  const isEditMode = mode === "edit" && event != null;
+  const isPersistedEdit = isEditMode && !event!.isPreviewOnly;
+  const canDelete = isEditMode;
 
   useEffect(() => {
     if (mode === "edit" && event) {
@@ -251,17 +254,36 @@ export function EventFormModal({
   }
 
   async function handleDelete() {
-    if (!isPersistedEdit || !event) return;
+    if (!canDelete || !event) return;
     if (!confirm("Delete this event?")) return;
     setLoading(true);
     try {
-      const { error: err } = await supabase.from("events").delete().eq("id", event.id);
+      let target = event;
+      if (event.isPreviewOnly && ensureEventPersistedForEdit) {
+        target = await ensureEventPersistedForEdit(event);
+      }
+      if (target.isPreviewOnly) {
+        const remainingOnDate = existingEvents.filter(
+          (e) => e.date === event.date && e.id !== event.id
+        );
+        if (remainingOnDate.length === 0) {
+          suppressAutoFillForDate(event.date);
+        }
+        onSuccess();
+        onClose();
+        return;
+      }
+
+      const { error: err } = await supabase
+        .from("events")
+        .delete()
+        .eq("id", target.id);
       if (err) throw err;
       const remainingOnDate = existingEvents.filter(
-        (e) => !e.isPreviewOnly && e.date === event.date && e.id !== event.id
+        (e) => !e.isPreviewOnly && e.date === target.date && e.id !== target.id
       );
       if (remainingOnDate.length === 0) {
-        suppressAutoFillForDate(event.date);
+        suppressAutoFillForDate(target.date);
       }
       onSuccess();
       onClose();
@@ -277,7 +299,7 @@ export function EventFormModal({
     }
   }
 
-  const title = isPersistedEdit ? "Edit Event" : "Add Event";
+  const title = isEditMode ? "Edit Event" : "Add Event";
   const minDate = format(startDate, "yyyy-MM-dd");
   const maxDate = format(
     new Date(startDate.getTime() + (dayCount - 1) * 24 * 60 * 60 * 1000),
@@ -456,7 +478,7 @@ export function EventFormModal({
             >
               Cancel
             </button>
-            {isPersistedEdit && (
+            {canDelete && (
               <button
                 type="button"
                 onClick={handleDelete}

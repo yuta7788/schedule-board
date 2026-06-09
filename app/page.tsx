@@ -8,6 +8,14 @@ import { useEvents, type DisplayEvent } from "@/hooks/useEvents";
 import { useMaterializeAutoFill } from "@/hooks/useMaterializeAutoFill";
 import { useLocations } from "@/hooks/useLocations";
 import { isAutoFillSuppressed, pruneSuppressedDates } from "@/lib/autoFillSuppression";
+import {
+  findPersistedMatch,
+  getAutoFillSourceEvents,
+  getAutoFillWindowKey,
+  insertMaterializedEvents,
+  markAutoFillDateProcessed,
+  toVisibleDayEvent,
+} from "@/lib/autoFillMaterialize";
 import { LoginModal } from "@/components/LoginModal";
 import { EventDetailsModal } from "@/components/EventDetailsModal";
 import { EventFormModal } from "@/components/EventFormModal";
@@ -395,6 +403,76 @@ export default function ScheduleBoardPage() {
     setSelectedEvent(event);
   }
 
+  const materializePreviewDayIfNeeded = useCallback(
+    async (
+      dateStr: string,
+      eventsSnapshot: DisplayEvent[]
+    ): Promise<DisplayEvent[]> => {
+      const destDayIndex = weekDates.findIndex(
+        (d) => format(d, "yyyy-MM-dd") === dateStr
+      );
+      if (destDayIndex < NEW_DAYS_START_INDEX) return [];
+
+      const byFetchedDay = indexEventsByFetchedDay(eventsSnapshot);
+      const destFetchedDayIndex = destDayIndex + fetchedOffset;
+      const existing = byFetchedDay.get(destFetchedDayIndex) ?? [];
+      if (existing.length > 0) {
+        return existing.map((ev) =>
+          toVisibleDayEvent(ev, destDayIndex, dateStr)
+        );
+      }
+      if (isAutoFillSuppressed(dateStr)) return [];
+
+      const source = getAutoFillSourceEvents(byFetchedDay, destFetchedDayIndex);
+      if (source.length === 0) return [];
+
+      const windowKey = getAutoFillWindowKey(weekDates[0]);
+      await insertMaterializedEvents(dateStr, source);
+      markAutoFillDateProcessed(windowKey, dateStr);
+
+      const fresh = await refetchEvents();
+      return (indexEventsByFetchedDay(fresh).get(destFetchedDayIndex) ?? []).map(
+        (ev) => toVisibleDayEvent(ev, destDayIndex, dateStr)
+      );
+    },
+    [weekDates, fetchedOffset, refetchEvents]
+  );
+
+  const ensureEventPersistedForEdit = useCallback(
+    async (event: DisplayEvent): Promise<DisplayEvent> => {
+      if (!event.isPreviewOnly) return event;
+
+      const destDayIndex = event.dayIndex;
+      const materialized = await materializePreviewDayIfNeeded(
+        event.date,
+        fetchedEvents
+      );
+      const match =
+        materialized.find(
+          (e) =>
+            e.startTime === event.startTime &&
+            e.endTime === event.endTime &&
+            e.student_name === event.student_name
+        ) ??
+        findPersistedMatch(event, fetchedEvents, destDayIndex, fetchedOffset);
+
+      if (match) return match;
+
+      const fresh = await refetchEvents();
+      return (
+        findPersistedMatch(event, fresh, destDayIndex, fetchedOffset) ?? event
+      );
+    },
+    [fetchedEvents, fetchedOffset, materializePreviewDayIfNeeded, refetchEvents]
+  );
+
+  const openEditForSelectedEvent = useCallback(async () => {
+    if (!selectedEvent) return;
+    const eventForEdit = await ensureEventPersistedForEdit(selectedEvent);
+    setSelectedEvent(eventForEdit);
+    setEventFormOpen(true);
+  }, [selectedEvent, ensureEventPersistedForEdit]);
+
   const showDetailsModal = !!selectedEvent && !eventFormOpen;
 
   return (
@@ -512,7 +590,7 @@ export default function ScheduleBoardPage() {
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
           isLoggedIn={isLoggedIn}
-          onEdit={() => setEventFormOpen(true)}
+          onEdit={() => void openEditForSelectedEvent()}
         />
       )}
 
@@ -527,6 +605,7 @@ export default function ScheduleBoardPage() {
           startDate={today}
           dayCount={MAX_DAYS_AHEAD}
           existingEvents={visibleEvents}
+          ensureEventPersistedForEdit={ensureEventPersistedForEdit}
           onClose={() => {
             setEventFormOpen(false);
             setSelectedEvent(null);

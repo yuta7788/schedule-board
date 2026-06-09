@@ -77,7 +77,7 @@ export function useEvents(startDate: Date, dayCount: number) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchEvents = useCallback(async () => {
+  const fetchEvents = useCallback(async (): Promise<DisplayEvent[]> => {
     setLoading(true);
     setError(null);
     try {
@@ -113,10 +113,12 @@ export function useEvents(startDate: Date, dayCount: number) {
           new Date(a.startIso).getTime() - new Date(b.startIso).getTime()
       );
       setEvents(display);
+      return display;
     } catch (err) {
       console.error("Fetch error:", err);
       setError(err instanceof Error ? err : new Error(String(err)));
       setEvents([]);
+      return [];
     } finally {
       setLoading(false);
     }
